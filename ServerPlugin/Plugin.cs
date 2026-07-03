@@ -54,6 +54,10 @@ public class Plugin : IPlugin, ICommonPlugin
         var gameVersion = MyFinalBuildConstants.APP_VERSION_STRING.ToString();
         Common.SetPlugin(this, gameVersion, MyFileSystem.UserDataPath);
 
+        // Decide whether the direct UDP transport is active before patching,
+        // so the InitializePatch Prepare() gate sees the right state.
+        DirectServer.Init(Log);
+
         if (!PatchHelpers.HarmonyPatchAll(Log, new Harmony(Name)))
         {
             failed = true;
@@ -102,7 +106,10 @@ public class Plugin : IPlugin, ICommonPlugin
 
     private void CustomUpdate()
     {
-        // TODO: Put your update code here. It is called on every simulation frame!
+        // Run deferred auth callbacks (client admission) on the server thread.
+        if (DirectServer.Enabled)
+            DirectServer.PumpMainThread();
+
         PatchHelpers.PatchUpdates();
     }
 }

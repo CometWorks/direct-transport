@@ -58,6 +58,11 @@ public class Plugin : IPlugin, ICommonPlugin
         var gameVersion = MyFinalBuildConstants.APP_VERSION_STRING.ToString();
         Common.SetPlugin(this, gameVersion, MyFileSystem.UserDataPath);
 
+        // Bring up the direct UDP transport (when SE_DIRECT_CONNECT is set)
+        // before applying patches, so each [HarmonyPatch] Prepare() gate sees
+        // the correct DirectClient.Enabled state.
+        DirectClient.Init(Log);
+
         if (!PatchHelpers.HarmonyPatchAll(Log, new Harmony(Name)))
         {
             failed = true;
