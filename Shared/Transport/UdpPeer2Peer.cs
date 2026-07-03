@@ -1,0 +1,343 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
+using LiteNetLib;
+using LiteNetLib.Utils;
+using VRage.GameServices;
+
+namespace Shared.Transport;
+
+// A raw-UDP implementation of the engine's peer-to-peer transport, used in
+// place of Steam P2P so clients and dedicated servers can talk without Steam.
+//
+// The whole engine addresses peers by a single ulong (historically a Steam
+// ID). Everything above IMyPeer2Peer is transport-agnostic, so the only job
+// here is: map each ulong peer id to a UDP endpoint, deliver opaque byte[]
+// payloads per channel, and honour the reliable/unreliable delivery hint.
+//
+// Reliability, ordering and fragmentation are provided by LiteNetLib. The
+// same class serves both roles: a server binds and accepts many peers; a
+// client connects to exactly one server. SE frames its own packets (magic
+// byte, CRC, splitting) above this layer, so payloads are passed through
+// untouched apart from a one-byte channel prefix.
+public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
+{
+    // One received datagram waiting to be handed to the engine.
+    private readonly struct Incoming
+    {
+        public readonly ulong Sender;
+        public readonly byte[] Data;
+
+        public Incoming(ulong sender, byte[] data)
+        {
+            Sender = sender;
+            Data = data;
+        }
+    }
+
+    private readonly NetManager m_manager;
+    private readonly bool m_isServer;
+
+    // Per-channel receive queues, keyed by the engine channel number. The
+    // engine drains these from its network thread via IsPacketAvailable /
+    // ReadPacket, so they must be thread-safe against the poll thread.
+    private readonly ConcurrentDictionary<int, ConcurrentQueue<Incoming>> m_receiveQueues = new();
+
+    // Bidirectional ulong <-> peer mapping. A client has a single entry for
+    // the server; a server has one entry per connected client.
+    private readonly ConcurrentDictionary<ulong, NetPeer> m_peersById = new();
+
+    private Thread m_pollThread;
+    private volatile bool m_running;
+
+    // The server endpoint a client connects to (client role only).
+    private IPEndPoint m_serverEndpoint;
+    private ulong m_serverId;
+
+    // Signalled once the client's single peer reaches Connected state, so the
+    // join can wait for the link before sending the reliable handshake.
+    private readonly ManualResetEventSlim m_clientConnected = new(false);
+
+    public event Action<ulong> SessionRequest;
+    public event Action<ulong, string> ConnectionFailed;
+
+    public UdpPeer2Peer(bool isServer)
+    {
+        m_isServer = isServer;
+        m_manager = new NetManager(this)
+        {
+            UnsyncedEvents = false,
+            AutoRecycle = true,
+            // A test network can push a lot of small reliable packets during
+            // world streaming; keep the disconnect timeout generous so a busy
+            // frame does not look like a dropped peer.
+            DisconnectTimeout = 30000,
+            ReconnectDelay = 500,
+            MaxConnectAttempts = 20,
+        };
+    }
+
+    // --- IMyPeer2Peer scalar/metadata members -----------------------------
+
+    public int MTUSize => 1200;
+    public int NetworkUpdateLatency => 2;
+    public string DetailedStats => "";
+    public IEnumerable<(string Name, double Value)> Stats { get { yield break; } }
+    public IEnumerable<(string Client, IEnumerable<(string Stat, double Value)> Stats)> ClientStats
+    {
+        get { yield break; }
+    }
+
+    // SetServer is called by the engine after construction; the role is
+    // already fixed here, so this only sanity-checks it.
+    public void SetServer(bool server)
+    {
+        if (server != m_isServer)
+            DirectTransport.LogError(
+                $"UdpPeer2Peer role mismatch: constructed isServer={m_isServer}, SetServer({server})");
+    }
+
+    public void BeginFrameProcessing() { }
+    public void EndFrameProcessing() { }
+    public void SignalServerJoined() { }
+
+    // --- Lifecycle --------------------------------------------------------
+
+    // Server: bind the UDP socket and start accepting peers.
+    public void StartServer(IPEndPoint bind)
+    {
+        if (m_running)
+            return;
+
+        if (!m_manager.Start(bind.Address, IPAddress.IPv6Any, bind.Port))
+            throw new InvalidOperationException($"Failed to bind UDP transport to {bind}");
+
+        StartPolling();
+        DirectTransport.Log($"UDP transport listening on {bind}");
+    }
+
+    // Client: open the local socket (ephemeral port) but do not connect yet.
+    public void StartClient()
+    {
+        if (m_running)
+            return;
+
+        if (!m_manager.Start())
+            throw new InvalidOperationException("Failed to start UDP transport (client)");
+
+        StartPolling();
+        DirectTransport.Log("UDP transport started (client)");
+    }
+
+    // Client: connect to the server and block until the link is up (or the
+    // timeout elapses). Returns true on success. The server id is the ulong
+    // the engine will use to address the server.
+    public bool ConnectToServer(IPEndPoint endpoint, ulong serverId, string localId, int timeoutMs)
+    {
+        m_serverEndpoint = endpoint;
+        m_serverId = serverId;
+        m_clientConnected.Reset();
+
+        var writer = new NetDataWriter();
+        writer.Put(DirectTransport.ProtocolKey);
+        writer.Put(localId);
+        m_manager.Connect(endpoint.Address.ToString(), endpoint.Port, writer);
+
+        DirectTransport.Log($"Connecting to server {endpoint} as {localId}");
+        return m_clientConnected.Wait(timeoutMs);
+    }
+
+    private void StartPolling()
+    {
+        m_running = true;
+        m_pollThread = new Thread(PollLoop)
+        {
+            Name = "DirectTransport-Poll",
+            IsBackground = true,
+        };
+        m_pollThread.Start();
+    }
+
+    private void PollLoop()
+    {
+        while (m_running)
+        {
+            try
+            {
+                m_manager.PollEvents();
+            }
+            catch (Exception e)
+            {
+                DirectTransport.LogError("UDP transport poll error: " + e);
+            }
+
+            Thread.Sleep(1);
+        }
+    }
+
+    public void Stop()
+    {
+        m_running = false;
+        try { m_pollThread?.Join(500); } catch { }
+        try { m_manager.Stop(); } catch { }
+        m_peersById.Clear();
+    }
+
+    // --- Send / receive ---------------------------------------------------
+
+    public bool SendPacket(ulong remoteUser, byte[] data, int byteCount, MyP2PMessageEnum msgType, int channel)
+    {
+        if (!m_peersById.TryGetValue(remoteUser, out NetPeer peer) || peer.ConnectionState != ConnectionState.Connected)
+            return false;
+
+        DeliveryMethod delivery =
+            msgType == MyP2PMessageEnum.Reliable || msgType == MyP2PMessageEnum.ReliableWithBuffering
+                ? DeliveryMethod.ReliableOrdered
+                : DeliveryMethod.Unreliable;
+
+        // Prefix the engine channel so the receiver can re-bucket it. A single
+        // reliable-ordered LiteNetLib stream preserves per-channel ordering as
+        // a subsequence, which is all the engine requires.
+        var writer = new NetDataWriter(true, byteCount + 1);
+        writer.Put((byte)channel);
+        writer.Put(data, 0, byteCount);
+        peer.Send(writer, delivery);
+        return true;
+    }
+
+    public bool IsPacketAvailable(out uint msgSize, int channel)
+    {
+        if (m_receiveQueues.TryGetValue(channel, out var queue) && queue.TryPeek(out Incoming next))
+        {
+            msgSize = (uint)next.Data.Length;
+            return true;
+        }
+
+        msgSize = 0u;
+        return false;
+    }
+
+    public bool ReadPacket(byte[] buffer, ref uint dataSize, out ulong remoteUser, int channel)
+    {
+        if (m_receiveQueues.TryGetValue(channel, out var queue) && queue.TryDequeue(out Incoming next))
+        {
+            int length = Math.Min(next.Data.Length, buffer.Length);
+            Buffer.BlockCopy(next.Data, 0, buffer, 0, length);
+            dataSize = (uint)length;
+            remoteUser = next.Sender;
+            return true;
+        }
+
+        dataSize = 0u;
+        remoteUser = 0uL;
+        return false;
+    }
+
+    public bool AcceptSession(ulong remotePeerId) => m_peersById.ContainsKey(remotePeerId);
+
+    public bool CloseSession(ulong remotePeerId)
+    {
+        if (m_peersById.TryRemove(remotePeerId, out NetPeer peer))
+        {
+            try { peer.Disconnect(); } catch { }
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool GetSessionState(ulong remoteUser, ref MyP2PSessionState state)
+    {
+        bool connected = m_peersById.TryGetValue(remoteUser, out NetPeer peer)
+            && peer.ConnectionState == ConnectionState.Connected;
+
+        // Consumers (MyMultiplayerClientBase.OnTick) only read ConnectionActive
+        // and UsingRelay; the remote IP/port fields are left at their defaults.
+        state = default;
+        state.ConnectionActive = connected;
+        state.UsingRelay = false;
+        return connected;
+    }
+
+    // --- INetEventListener ------------------------------------------------
+
+    // Server side: authorise an incoming client and read its announced id.
+    public void OnConnectionRequest(ConnectionRequest request)
+    {
+        if (!m_isServer)
+        {
+            request.Reject();
+            return;
+        }
+
+        try
+        {
+            string key = request.Data.GetString();
+            if (key != DirectTransport.ProtocolKey)
+            {
+                DirectTransport.LogError($"Rejected peer {request.RemoteEndPoint}: bad protocol key");
+                request.Reject();
+                return;
+            }
+
+            ulong clientId = request.Data.GetULong();
+            NetPeer peer = request.Accept();
+            peer.Tag = clientId;
+            m_peersById[clientId] = peer;
+            DirectTransport.Log($"Accepted client {clientId} from {request.RemoteEndPoint}");
+
+            // Let the engine register the session; its handler calls
+            // AcceptSession, which we already satisfy via the map above.
+            SessionRequest?.Invoke(clientId);
+        }
+        catch (Exception e)
+        {
+            DirectTransport.LogError("OnConnectionRequest failed: " + e);
+            request.Reject();
+        }
+    }
+
+    public void OnPeerConnected(NetPeer peer)
+    {
+        if (m_isServer)
+            return;
+
+        // Client: the single peer is the server.
+        peer.Tag = m_serverId;
+        m_peersById[m_serverId] = peer;
+        m_clientConnected.Set();
+        DirectTransport.Log($"Connected to server {peer.Address} (id {m_serverId})");
+    }
+
+    public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+    {
+        ulong id = peer.Tag is ulong tag ? tag : (m_isServer ? 0uL : m_serverId);
+        if (id != 0uL)
+            m_peersById.TryRemove(id, out _);
+
+        DirectTransport.Log($"Peer {id} disconnected: {disconnectInfo.Reason}");
+        if (id != 0uL)
+            ConnectionFailed?.Invoke(id, disconnectInfo.Reason.ToString());
+    }
+
+    public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
+    {
+        ulong sender = peer.Tag is ulong tag ? tag : (m_isServer ? 0uL : m_serverId);
+
+        int seChannel = reader.GetByte();
+        byte[] payload = reader.GetRemainingBytes();
+
+        var queue = m_receiveQueues.GetOrAdd(seChannel, _ => new ConcurrentQueue<Incoming>());
+        queue.Enqueue(new Incoming(sender, payload));
+    }
+
+    public void OnNetworkError(IPEndPoint endPoint, SocketError socketError) =>
+        DirectTransport.LogError($"UDP socket error from {endPoint}: {socketError}");
+
+    public void OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType) { }
+
+    public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { }
+}

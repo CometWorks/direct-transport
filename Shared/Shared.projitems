@@ -27,6 +27,9 @@
     <Compile Include="$(MSBuildThisFileDirectory)Tools\IgnoresAccessChecksToAttribute.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Tools\PreloaderHelpers.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Tools\TranspilerHelpers.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Transport\DirectTransport.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Transport\UdpNetworking.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Transport\UdpPeer2Peer.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)..\README.md">
