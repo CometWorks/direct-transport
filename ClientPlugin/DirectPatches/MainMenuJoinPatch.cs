@@ -36,8 +36,14 @@ public static class MainMenuJoinPatch
             MaxPlayers = 16,
         };
 
-        // rules == null skips the settings/consent deserialization; the direct
-        // connect path does not need server rules.
-        MyJoinGameHelper.JoinGame(server, null);
+        // Pass an EMPTY (but non-null) rules dictionary, not null. In this game
+        // version MyJoinGameHelper.JoinGame(server, rules) only reaches StartJoin
+        // — which creates the MyMultiplayerClient that drives the connect through
+        // our patched MyNullServerDiscovery.Connect — when rules != null. With
+        // rules == null it takes the outer else and merely calls failedToJoin,
+        // so nothing connects. An empty dict still skips settings/consent
+        // deserialization (MyCachedServerItem.DeserializeSettings returns early
+        // when the "sc" key is absent), so the direct-connect path stays clean.
+        MyJoinGameHelper.JoinGame(server, new System.Collections.Generic.Dictionary<string, string>());
     }
 }

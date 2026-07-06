@@ -37,6 +37,34 @@ public static class DirectServer
             : $"Direct transport server inactive (set {EnableEnvVar}=1 to enable)");
     }
 
+    // Preloader entry point, injected as a prologue into
+    // MyDedicatedServerBase.Initialize by ServerPlugin/Preloader.cs.
+    //
+    // The dedicated server brings its networking up (MyNetworkMonitor starts
+    // polling the game server) BEFORE the engine calls IPlugin.Init, so the
+    // Harmony InitializePatch — applied from Plugin.Init — is too late: stock
+    // Steam networking runs first and throws "Steamworks GameServer is not
+    // initialized". This Cecil-injected call runs at the start of Initialize
+    // itself, the same point the Harmony prefix targeted, but without depending
+    // on plugin-init timing. It self-initialises so it works even though
+    // Plugin.Init has not run yet, and no-ops unless SE_DIRECT_TRANSPORT is set.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    public static void PreInstall(IPEndPoint bind)
+    {
+        try
+        {
+            if (!IsTruthy(Environment.GetEnvironmentVariable(EnableEnvVar)))
+                return;
+            if (m_log == null)
+                Init(new Shared.Logging.PluginLogger(Plugin.Name));
+            Install(bind);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("[DirectTransport] PreInstall failed: " + e);
+        }
+    }
+
     // Called from the Initialize prefix with the endpoint the dedicated server
     // is about to bind. Registers our networking + game server so the ensuing
     // engine bring-up transports over UDP instead of Steam.
