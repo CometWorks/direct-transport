@@ -12,8 +12,8 @@
     <Description>Lets a Space Engineers client join a dedicated server over raw UDP
         without Steam, for headless multi-client test setups (functional and load
         testing). Activated by the SE_DIRECT_CONNECT environment variable, which
-        Pulsar sets from its --connect option when running in no-Steam (--steamid)
-        mode. Requires the matching DirectTransport (Server) plugin on the server.
+        Pulsar sets from its --connect option when running with --client-id.
+        Requires the matching DirectTransport (Server) plugin on the server.
     </Description>
 
     <SourceDirectories>

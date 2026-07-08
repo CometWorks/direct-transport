@@ -13,7 +13,8 @@
         without Steam, for headless multi-client test setups (functional and load
         testing). Activated by the SE_DIRECT_TRANSPORT environment variable
         (1/true/yes/on). Admits clients without Steam authentication. Requires the
-        matching DirectTransport (Client) plugin on each client.
+        matching DirectTransport (Client) plugin on each client with --connect and
+        --client-id parameters specified.
     </Description>
 
     <SourceDirectories>
