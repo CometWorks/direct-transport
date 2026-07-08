@@ -135,12 +135,17 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
     // Client: connect to the server and block until the link is up (or the
     // timeout elapses). Returns true on success. The server id is the ulong
     // the engine will use to address the server.
-    public bool ConnectToServer(IPEndPoint endpoint, ulong serverId, string localId, int timeoutMs)
+    public bool ConnectToServer(IPEndPoint endpoint, ulong serverId, ulong localId, int timeoutMs)
     {
         m_serverEndpoint = endpoint;
         m_serverId = serverId;
         m_clientConnected.Reset();
 
+        // Announce our peer id as a ulong; the server reads it back with
+        // GetULong() in OnConnectionRequest. These two must use the same wire
+        // type: if the client wrote a string here the server's GetULong() would
+        // decode the string's bytes into a garbage id, register the peer under
+        // it, and later fail to route replication addressed to the real id.
         var writer = new NetDataWriter();
         writer.Put(DirectTransport.ProtocolKey);
         writer.Put(localId);
@@ -193,15 +198,28 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         if (!m_peersById.TryGetValue(remoteUser, out NetPeer peer) || peer.ConnectionState != ConnectionState.Connected)
             return false;
 
-        DeliveryMethod delivery =
-            msgType == MyP2PMessageEnum.Reliable || msgType == MyP2PMessageEnum.ReliableWithBuffering
-                ? DeliveryMethod.ReliableOrdered
-                : DeliveryMethod.Unreliable;
+        bool reliable = msgType == MyP2PMessageEnum.Reliable || msgType == MyP2PMessageEnum.ReliableWithBuffering;
+        DeliveryMethod delivery = reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Unreliable;
 
         // Prefix the engine channel so the receiver can re-bucket it. A single
         // reliable-ordered LiteNetLib stream preserves per-channel ordering as
         // a subsequence, which is all the engine requires.
-        var writer = new NetDataWriter(true, byteCount + 1);
+        int total = byteCount + 1;
+
+        // The engine sizes unreliable messages (state sync) up to its reported
+        // MTUSize, which can exceed LiteNetLib's per-datagram limit for the
+        // link's current MTU. LiteNetLib only fragments the reliable channelled
+        // methods; Unreliable/Sequenced throw TooBigPacketException instead. So
+        // promote any oversized unreliable packet to a fragmenting reliable-
+        // unordered delivery (Steam's unreliable path fragments large payloads
+        // too, so the engine legitimately hands us over-MTU unreliable sends).
+        // ReliableUnordered keeps these off the ReliableOrdered stream, avoiding
+        // head-of-line blocking of the ordered reliable traffic; the engine
+        // orders state sync by timestamp regardless of arrival order.
+        if (!reliable && total > peer.GetMaxSinglePacketSize(DeliveryMethod.Unreliable))
+            delivery = DeliveryMethod.ReliableUnordered;
+
+        var writer = new NetDataWriter(true, total);
         writer.Put((byte)channel);
         writer.Put(data, 0, byteCount);
         peer.Send(writer, delivery);

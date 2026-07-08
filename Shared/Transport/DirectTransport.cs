@@ -75,7 +75,7 @@ public static class DirectTransport
         if (Peer == null || IsServer)
             return false;
 
-        return Peer.ConnectToServer(serverEndpoint, ServerId, localId.ToString(), ConnectTimeoutMs);
+        return Peer.ConnectToServer(serverEndpoint, ServerId, localId, ConnectTimeoutMs);
     }
 
     // Point MyGameService at our networking. AddService fires MyServiceManager
