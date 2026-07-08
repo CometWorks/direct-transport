@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <PluginData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="GitHubPlugin">
 
-    <Id>direct-transport-server</Id>
+    <Id>direct-transport</Id>
     <GroupId>direct-transport</GroupId>
     <RepoId>CometWorks/direct-transport</RepoId>
 
-    <FriendlyName>DirectTransport (Server)</FriendlyName>
+    <FriendlyName>Direct Transport</FriendlyName>
     <Author>CometWorks</Author>
 
     <Tooltip>Non-Steam direct UDP multiplayer transport (dedicated server)</Tooltip>
