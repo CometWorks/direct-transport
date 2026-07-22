@@ -166,6 +166,8 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         m_pollThread.Start();
     }
 
+    private long m_nextLiveness;
+
     private void PollLoop()
     {
         while (m_running)
@@ -173,6 +175,20 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
             try
             {
                 m_manager.PollEvents();
+                // Periodic per-peer liveness: diagnoses one-way silence (a remote watchdog sees
+                // nothing from us while we still receive) versus mutual socket death.
+                long now = Environment.TickCount64;
+                if (now >= m_nextLiveness)
+                {
+                    m_nextLiveness = now + 10000;
+                    // Console, not DirectTransport.Log: the SE game log writer can stall minutes into
+                    // a session, and this diagnostic must survive to the end of the run.
+                    foreach (var pair in m_peersById)
+                        Console.WriteLine($"[DirectTransport] UDP liveness peer={pair.Key} state={pair.Value.ConnectionState}"
+                            + $" sinceLastMs={pair.Value.TimeSinceLastPacket:F0} ping={pair.Value.Ping}");
+                    if (m_peersById.IsEmpty)
+                        Console.WriteLine("[DirectTransport] UDP liveness: no peers");
+                }
             }
             catch (Exception e)
             {
