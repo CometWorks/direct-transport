@@ -62,6 +62,7 @@ public class Plugin : IPlugin, ICommonPlugin
         // before applying patches, so each [HarmonyPatch] Prepare() gate sees
         // the correct DirectClient.Enabled state.
         DirectClient.Init(Log);
+        DirectPatches.DisplayNamePatch.Init(Log);
 
         if (!PatchHelpers.HarmonyPatchAll(Log, new Harmony(Name)))
         {
