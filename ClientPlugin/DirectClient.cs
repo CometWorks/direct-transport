@@ -60,8 +60,12 @@ public static class DirectClient
     public static bool Connect()
     {
         ulong localId = MyGameService.UserId;
-        m_log?.Info($"Establishing direct link to {ServerEndpoint} as user {localId}");
-        bool ok = DirectTransport.ConnectClient(ServerEndpoint, localId);
+        // OnlineName is SE_DIRECT_NAME when set (DisplayNamePatch), otherwise the platform layer's
+        // "Player<client-id>". Either way it is what this client wants to be called, and the handshake
+        // is the only place a no-Steam client can say so before the server names its identity.
+        string localName = MyGameService.OnlineName;
+        m_log?.Info($"Establishing direct link to {ServerEndpoint} as user {localId} ('{localName}')");
+        bool ok = DirectTransport.ConnectClient(ServerEndpoint, localId, localName);
         if (!ok)
             m_log?.Error($"Direct link to {ServerEndpoint} timed out");
         return ok;

@@ -70,12 +70,12 @@ public static class DirectTransport
 
     // Client: connect to the given server endpoint and block until the link
     // is established, so the reliable join handshake is not dropped.
-    public static bool ConnectClient(IPEndPoint serverEndpoint, ulong localId)
+    public static bool ConnectClient(IPEndPoint serverEndpoint, ulong localId, string localName = null)
     {
         if (Peer == null || IsServer)
             return false;
 
-        return Peer.ConnectToServer(serverEndpoint, ServerId, localId, ConnectTimeoutMs);
+        return Peer.ConnectToServer(serverEndpoint, ServerId, localId, localName, ConnectTimeoutMs);
     }
 
     // Point MyGameService at our networking. AddService fires MyServiceManager

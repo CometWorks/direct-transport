@@ -135,7 +135,7 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
     // Client: connect to the server and block until the link is up (or the
     // timeout elapses). Returns true on success. The server id is the ulong
     // the engine will use to address the server.
-    public bool ConnectToServer(IPEndPoint endpoint, ulong serverId, ulong localId, int timeoutMs)
+    public bool ConnectToServer(IPEndPoint endpoint, ulong serverId, ulong localId, string localName, int timeoutMs)
     {
         m_serverEndpoint = endpoint;
         m_serverId = serverId;
@@ -149,6 +149,11 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         var writer = new NetDataWriter();
         writer.Put(DirectTransport.ProtocolKey);
         writer.Put(localId);
+        // A no-Steam client has no persona the server can look up, so it announces the name it wants to
+        // be known by. A plain direct-transport server ignores the trailing field; the Gateway names the
+        // player and the identity from it instead of from the numeric client id.
+        if (!string.IsNullOrEmpty(localName))
+            writer.Put(localName);
         m_manager.Connect(endpoint.Address.ToString(), endpoint.Port, writer);
 
         DirectTransport.Log($"Connecting to server {endpoint} as {localId}");
