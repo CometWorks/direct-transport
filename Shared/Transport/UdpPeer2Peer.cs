@@ -25,6 +25,8 @@ namespace Shared.Transport;
 // untouched apart from a one-byte channel prefix.
 public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 {
+    private const byte NodeLinkChannels = 16;
+
     // One received datagram waiting to be handed to the engine.
     private readonly struct Incoming
     {
@@ -49,6 +51,7 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
     // Bidirectional ulong <-> peer mapping. A client has a single entry for
     // the server; a server has one entry per connected client.
     private readonly ConcurrentDictionary<ulong, NetPeer> m_peersById = new();
+    private readonly NodeLinkState<NetPeer> m_nodeLink = new();
 
     private Thread m_pollThread;
     private volatile bool m_running;
@@ -63,12 +66,20 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
     public event Action<ulong> SessionRequest;
     public event Action<ulong, string> ConnectionFailed;
+    public event Action<byte[]> NodeLinkMessageReceived;
+    public event Action<bool> NodeLinkConnectionChanged;
+    public event Action<ulong> NodeLinkClientDetached;
+
+    public Func<ulong, byte[], bool> NodeLinkAttachValidator { get; set; }
+    public bool IsNodeLinkConnected => m_nodeLink.TryGetLink(out NetPeer peer)
+        && peer.ConnectionState == ConnectionState.Connected;
 
     public UdpPeer2Peer(bool isServer)
     {
         m_isServer = isServer;
         m_manager = new NetManager(this)
         {
+            ChannelsCount = NodeLinkChannels,
             UnsyncedEvents = false,
             AutoRecycle = true,
             // A test network can push a lot of small reliable packets during
@@ -216,6 +227,30 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
     public bool SendPacket(ulong remoteUser, byte[] data, int byteCount, MyP2PMessageEnum msgType, int channel)
     {
+        if (m_nodeLink.TryGetPeer(remoteUser, out NetPeer linkPeer))
+        {
+            bool linkReliable = msgType == MyP2PMessageEnum.Reliable
+                || msgType == MyP2PMessageEnum.ReliableWithBuffering;
+            DeliveryMethod linkDelivery = linkReliable
+                ? DeliveryMethod.ReliableOrdered
+                : DeliveryMethod.Unreliable;
+            byte[] envelope = NodeLinkCodec.Write(
+                NodeLinkMessage.Relay,
+                remoteUser,
+                checked((byte)channel),
+                data,
+                byteCount);
+            if (!linkReliable && envelope.Length > linkPeer.GetMaxSinglePacketSize(DeliveryMethod.Unreliable))
+                linkDelivery = DeliveryMethod.ReliableUnordered;
+
+            var relay = new PendingRelay(envelope, LinkChannel(remoteUser), linkDelivery);
+            if (!m_nodeLink.SendOrQueue(remoteUser, relay, out PendingRelay immediate))
+                return false;
+            if (immediate.Data != null)
+                linkPeer.Send(immediate.Data, immediate.Channel, immediate.Delivery);
+            return true;
+        }
+
         if (!m_peersById.TryGetValue(remoteUser, out NetPeer peer) || peer.ConnectionState != ConnectionState.Connected)
             return false;
 
@@ -275,10 +310,22 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         return false;
     }
 
-    public bool AcceptSession(ulong remotePeerId) => m_peersById.ContainsKey(remotePeerId);
+    public bool AcceptSession(ulong remotePeerId) =>
+        m_nodeLink.Contains(remotePeerId) || m_peersById.ContainsKey(remotePeerId);
 
     public bool CloseSession(ulong remotePeerId)
     {
+        if (m_nodeLink.TryGetPeer(remotePeerId, out NetPeer linkPeer))
+        {
+            linkPeer.Send(
+                NodeLinkCodec.Write(NodeLinkMessage.Detach, remotePeerId),
+                LinkChannel(remotePeerId),
+                DeliveryMethod.ReliableOrdered);
+            m_nodeLink.Detach(remotePeerId);
+            NodeLinkClientDetached?.Invoke(remotePeerId);
+            return true;
+        }
+
         if (m_peersById.TryRemove(remotePeerId, out NetPeer peer))
         {
             try { peer.Disconnect(); } catch { }
@@ -290,8 +337,10 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
     public bool GetSessionState(ulong remoteUser, ref MyP2PSessionState state)
     {
-        bool connected = m_peersById.TryGetValue(remoteUser, out NetPeer peer)
-            && peer.ConnectionState == ConnectionState.Connected;
+        bool connected = m_nodeLink.TryGetPeer(remoteUser, out NetPeer linkPeer)
+            ? linkPeer.ConnectionState == ConnectionState.Connected
+            : m_peersById.TryGetValue(remoteUser, out NetPeer peer)
+                && peer.ConnectionState == ConnectionState.Connected;
 
         // Consumers (MyMultiplayerClientBase.OnTick) only read ConnectionActive
         // and UsingRelay; the remote IP/port fields are left at their defaults.
@@ -323,6 +372,19 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
             }
 
             ulong clientId = request.Data.GetULong();
+            if (clientId == NodeLinkCodec.NodeLinkId)
+            {
+                AcceptNodeLink(request);
+                return;
+            }
+
+            if (m_nodeLink.Contains(clientId))
+            {
+                DirectTransport.LogError($"Rejected physical peer {clientId}: id is attached through Gateway");
+                request.Reject();
+                return;
+            }
+
             NetPeer peer = request.Accept();
             peer.Tag = clientId;
             m_peersById[clientId] = peer;
@@ -353,6 +415,20 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
+        bool wasNodeLink = m_nodeLink.IsLink(peer);
+        ulong[] attachedClients = m_nodeLink.Disconnect(peer);
+        if (wasNodeLink)
+        {
+            NodeLinkConnectionChanged?.Invoke(false);
+            foreach (ulong clientId in attachedClients)
+            {
+                NodeLinkClientDetached?.Invoke(clientId);
+                ConnectionFailed?.Invoke(clientId, disconnectInfo.Reason.ToString());
+            }
+            DirectTransport.Log($"Gateway node link disconnected: {disconnectInfo.Reason}");
+            return;
+        }
+
         ulong id = peer.Tag is ulong tag ? tag : (m_isServer ? 0uL : m_serverId);
         if (id != 0uL)
             m_peersById.TryRemove(id, out _);
@@ -364,6 +440,12 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
     {
+        if (m_nodeLink.IsLink(peer))
+        {
+            ReceiveNodeLink(peer, reader);
+            return;
+        }
+
         ulong sender = peer.Tag is ulong tag ? tag : (m_isServer ? 0uL : m_serverId);
 
         int seChannel = reader.GetByte();
@@ -379,4 +461,140 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
     public void OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType) { }
 
     public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { }
+
+    public bool SendNodeLinkMessage(byte[] payload)
+    {
+        if (payload == null || payload.Length == 0
+            || !m_nodeLink.TryGetLink(out NetPeer peer)
+            || peer.ConnectionState != ConnectionState.Connected)
+            return false;
+
+        peer.Send(
+            NodeLinkCodec.Write(NodeLinkMessage.Global, 0, payload: payload, payloadLength: payload.Length),
+            0,
+            DeliveryMethod.ReliableOrdered);
+        return true;
+    }
+
+    private void AcceptNodeLink(ConnectionRequest request)
+    {
+        if (request.Data.AvailableBytes == 0
+            || request.Data.GetString() != NodeLinkCodec.ProtocolKey
+            || request.Data.AvailableBytes == 0
+            || !NodeLinkAuth.Accepts(request.Data.GetString())
+            || request.Data.AvailableBytes != 0)
+        {
+            DirectTransport.LogError($"Rejected Gateway node link from {request.RemoteEndPoint}: join token not accepted");
+            request.Reject();
+            return;
+        }
+
+        NetPeer peer = request.Accept();
+        peer.Tag = NodeLinkPeerTag.Instance;
+        if (!m_nodeLink.TryConnect(peer))
+        {
+            DirectTransport.LogError($"Rejected duplicate Gateway node link from {request.RemoteEndPoint}");
+            peer.Disconnect();
+            return;
+        }
+
+        DirectTransport.Log($"Accepted Gateway node link from {request.RemoteEndPoint}");
+        NodeLinkConnectionChanged?.Invoke(true);
+    }
+
+    private void ReceiveNodeLink(NetPeer peer, NetPacketReader reader)
+    {
+        NodeLinkPacket packet;
+        try
+        {
+            packet = NodeLinkCodec.Read(reader.GetRemainingBytes());
+        }
+        catch (Exception exception)
+        {
+            DirectTransport.LogError("Rejected malformed Gateway node-link packet: " + exception.Message);
+            peer.Disconnect();
+            return;
+        }
+
+        switch (packet.Kind)
+        {
+            case NodeLinkMessage.Attach:
+                if (m_peersById.ContainsKey(packet.ClientId))
+                {
+                    RejectAttach(peer, packet.ClientId, "client id already belongs to a physical peer");
+                    return;
+                }
+                if (NodeLinkAttachValidator == null
+                    || !NodeLinkAttachValidator(packet.ClientId, packet.Payload))
+                {
+                    RejectAttach(peer, packet.ClientId, "no current World Authority player binding");
+                    return;
+                }
+
+                bool attached = m_nodeLink.Attach(packet.ClientId);
+                if (attached)
+                {
+                    DirectTransport.Log($"Accepted client {packet.ClientId} through Gateway node link");
+                    SessionRequest?.Invoke(packet.ClientId);
+                }
+                if (attached || m_nodeLink.Contains(packet.ClientId))
+                    peer.Send(
+                        NodeLinkCodec.Write(NodeLinkMessage.AttachAck, packet.ClientId),
+                        LinkChannel(packet.ClientId),
+                        DeliveryMethod.ReliableOrdered);
+                return;
+
+            case NodeLinkMessage.Detach:
+                if (m_nodeLink.Detach(packet.ClientId))
+                {
+                    NodeLinkClientDetached?.Invoke(packet.ClientId);
+                    ConnectionFailed?.Invoke(packet.ClientId, "Gateway detached client");
+                }
+                peer.Send(
+                    NodeLinkCodec.Write(NodeLinkMessage.DetachAck, packet.ClientId),
+                    LinkChannel(packet.ClientId),
+                    DeliveryMethod.ReliableOrdered);
+                return;
+
+            case NodeLinkMessage.Credit:
+                foreach (PendingRelay pending in m_nodeLink.GrantCredit(packet.ClientId, packet.Credit))
+                    peer.Send(pending.Data, pending.Channel, pending.Delivery);
+                return;
+
+            case NodeLinkMessage.AttachAck:
+            case NodeLinkMessage.DetachAck:
+                DirectTransport.LogError("Rejected directionally invalid node-link acknowledgement");
+                peer.Disconnect();
+                return;
+
+            case NodeLinkMessage.Global:
+                NodeLinkMessageReceived?.Invoke(packet.Payload);
+                return;
+
+            case NodeLinkMessage.Relay:
+                if (m_nodeLink.Contains(packet.ClientId))
+                {
+                    var queue = m_receiveQueues.GetOrAdd(packet.Channel, _ => new ConcurrentQueue<Incoming>());
+                    queue.Enqueue(new Incoming(packet.ClientId, packet.Payload));
+                }
+                return;
+        }
+    }
+
+    private static byte LinkChannel(ulong clientId) => (byte)(clientId % NodeLinkChannels);
+
+    private static void RejectAttach(NetPeer peer, ulong clientId, string reason)
+    {
+        DirectTransport.LogError($"Rejected Gateway client {clientId}: {reason}");
+        peer.Send(
+            NodeLinkCodec.Write(NodeLinkMessage.Detach, clientId),
+            LinkChannel(clientId),
+            DeliveryMethod.ReliableOrdered);
+    }
+
+    private sealed class NodeLinkPeerTag
+    {
+        public static readonly NodeLinkPeerTag Instance = new();
+        private NodeLinkPeerTag() { }
+    }
 }

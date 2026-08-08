@@ -28,6 +28,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)Tools\PreloaderHelpers.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Tools\TranspilerHelpers.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Transport\DirectTransport.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Transport\NodeLinkAuth.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Transport\NodeLinkCodec.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Transport\UdpNetworking.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Transport\UdpPeer2Peer.cs" />
   </ItemGroup>

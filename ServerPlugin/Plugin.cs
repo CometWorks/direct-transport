@@ -2,10 +2,12 @@
 using System.IO;
 using System.Threading;
 using HarmonyLib;
+using PluginSdk.Clustering;
 using Shared.Config;
 using Shared.Logging;
 using Shared.Patches;
 using Shared.Plugin;
+using Shared.Transport;
 using VRage.FileSystem;
 using VRage.Game;
 using VRage.Plugins;
@@ -28,6 +30,7 @@ public class Plugin : IPlugin, ICommonPlugin
 
     public long Tick { get; private set; }
     private static bool failed;
+    private ClusterNodeLinkAdapter clusterNodeLink;
 
     public IPluginLogger Log => Logger;
     private static readonly IPluginLogger Logger = new PluginLogger(Name);
@@ -64,6 +67,20 @@ public class Plugin : IPlugin, ICommonPlugin
             return;
         }
 
+        if (DirectServer.Enabled)
+        {
+            clusterNodeLink = new ClusterNodeLinkAdapter();
+            if (!ClusterNodeLink.Register(clusterNodeLink))
+            {
+                Log.Critical("Another cluster node-link provider is already registered");
+                clusterNodeLink.Dispose();
+                clusterNodeLink = null;
+                failed = true;
+                return;
+            }
+            Log.Info("Registered cluster Gateway node-link service");
+        }
+
         Log.Debug("Successfully loaded");
     }
 
@@ -71,6 +88,12 @@ public class Plugin : IPlugin, ICommonPlugin
     {
         try
         {
+            if (clusterNodeLink != null)
+            {
+                ClusterNodeLink.Unregister(clusterNodeLink);
+                clusterNodeLink.Dispose();
+                clusterNodeLink = null;
+            }
             // TODO: Save state and close resources here, called when the game exists (not guaranteed!)
             // IMPORTANT: Do NOT call harmony.UnpatchAll() here! It may break other plugins.
         }
