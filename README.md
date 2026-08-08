@@ -44,6 +44,13 @@ ownership of framing, authentication, client relay, credit flow control, and
 physical UDP sessions. A missing attachment validator rejects Gateway client
 attachments fail-closed.
 
+Node-link v2 also carries dedicated, reliable `LifecycleRequest` and
+`LifecycleAck` frames. ClusterRuntime uses them to route PluginSdk/chat restart
+intent to the Gateway Registry. The request is correlated by GUID; enqueue is
+not success, and malformed or directionally invalid lifecycle frames disconnect
+the link. In cluster mode, missing/rejected acknowledgements never fall back to
+local process termination.
+
 ## Usage
 
 Run one dedicated server (Magnetar) and any number of clients (Pulsar), all on

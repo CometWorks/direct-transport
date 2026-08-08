@@ -30,6 +30,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Transport\DirectTransport.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Transport\NodeLinkAuth.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Transport\NodeLinkCodec.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Transport\NodeLifecycleWireCodec.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Transport\UdpNetworking.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Transport\UdpPeer2Peer.cs" />
   </ItemGroup>
