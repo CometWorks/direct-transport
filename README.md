@@ -29,6 +29,21 @@ replaces that seam:
 Only the transport and auth are replaced — the join handshake, world download
 and replication are the stock engine paths.
 
+## Cluster Gateway link
+
+The server transport also owns the authenticated Gateway-to-node data link used
+by clustered servers. A Gateway connects with the reserved node-link peer id,
+`SE-ClusterNodeLink-v2`, and a registry-issued join token. The current token is
+read from `SE_CLUSTER_JOIN_TOKEN_CURRENT` (or `SE_CLUSTER_JOIN_TOKEN`) and the
+optional rotation overlap from `SE_CLUSTER_JOIN_TOKEN_PREVIOUS`.
+
+When enabled on Magnetar, the server plugin publishes an `IClusterNodeLink`
+service through PluginSdk. The separate ClusterRuntime plugin consumes that
+service for World Authority bindings and global state; DirectTransport keeps
+ownership of framing, authentication, client relay, credit flow control, and
+physical UDP sessions. A missing attachment validator rejects Gateway client
+attachments fail-closed.
+
 ## Usage
 
 Run one dedicated server (Magnetar) and any number of clients (Pulsar), all on
@@ -59,7 +74,9 @@ identities). Combine with `--headless` for players-free load testing.
 
 - Linux, .NET (Core) runtime, dedicated-server target — matching the headless
   test use case.
-- No encryption or authentication: intended for trusted, isolated test networks.
+- Ordinary direct clients are not authenticated or encrypted: use a trusted,
+  isolated network. The cluster node link authenticates its Gateway join token
+  but is not encrypted; deploy it on a protected network.
 - One server per client process (a client joins a single server at a time).
 
 ## Building

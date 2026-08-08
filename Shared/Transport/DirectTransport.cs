@@ -36,6 +36,7 @@ public static class DirectTransport
     public static bool Active { get; private set; }
     public static bool IsServer { get; private set; }
     public static UdpPeer2Peer Peer { get; private set; }
+    public static event Action<UdpPeer2Peer> PeerCreated;
 
     // Server: bind the UDP socket and register the networking service so the
     // dedicated server object (created later) transports over UDP. Call
@@ -47,6 +48,7 @@ public static class DirectTransport
 
         IsServer = true;
         Peer = new UdpPeer2Peer(isServer: true);
+        PeerCreated?.Invoke(Peer);
         Peer.StartServer(bind);
         RegisterNetworking();
         Active = true;
@@ -62,6 +64,7 @@ public static class DirectTransport
 
         IsServer = false;
         Peer = new UdpPeer2Peer(isServer: false);
+        PeerCreated?.Invoke(Peer);
         Peer.StartClient();
         RegisterNetworking();
         Active = true;
