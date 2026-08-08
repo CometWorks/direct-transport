@@ -69,6 +69,7 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
     public event Action<byte[]> NodeLinkMessageReceived;
     public event Action<bool> NodeLinkConnectionChanged;
     public event Action<ulong> NodeLinkClientDetached;
+    public event Action<byte[]> NodeLinkLifecycleAcknowledged;
 
     public Func<ulong, byte[], bool> NodeLinkAttachValidator { get; set; }
     public bool IsNodeLinkConnected => m_nodeLink.TryGetLink(out NetPeer peer)
@@ -476,6 +477,21 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         return true;
     }
 
+    public bool SendNodeLifecycleRequest(byte[] payload)
+    {
+        if (payload == null || payload.Length == 0
+            || !m_nodeLink.TryGetLink(out NetPeer peer)
+            || peer.ConnectionState != ConnectionState.Connected)
+            return false;
+
+        peer.Send(
+            NodeLinkCodec.Write(NodeLinkMessage.LifecycleRequest, 0,
+                payload: payload, payloadLength: payload.Length),
+            0,
+            DeliveryMethod.ReliableOrdered);
+        return true;
+    }
+
     private void AcceptNodeLink(ConnectionRequest request)
     {
         if (request.Data.AvailableBytes == 0
@@ -563,8 +579,23 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
             case NodeLinkMessage.AttachAck:
             case NodeLinkMessage.DetachAck:
-                DirectTransport.LogError("Rejected directionally invalid node-link acknowledgement");
+            case NodeLinkMessage.LifecycleRequest:
+                DirectTransport.LogError("Rejected directionally invalid node-link message");
                 peer.Disconnect();
+                return;
+
+            case NodeLinkMessage.LifecycleAck:
+                try
+                {
+                    NodeLifecycleWireCodec.ReadAck(packet.Payload);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    DirectTransport.LogError("Rejected malformed lifecycle acknowledgement: " + exception.Message);
+                    peer.Disconnect();
+                    return;
+                }
+                NodeLinkLifecycleAcknowledged?.Invoke(packet.Payload);
                 return;
 
             case NodeLinkMessage.Global:

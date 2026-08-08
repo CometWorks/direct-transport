@@ -12,5 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Shared\Transport\NodeLinkCodec.cs" Link="NodeLinkCodec.cs" />
+    <Compile Include="..\Shared\Transport\NodeLifecycleWireCodec.cs" Link="NodeLifecycleWireCodec.cs" />
   </ItemGroup>
 </Project>

@@ -14,6 +14,8 @@ internal enum NodeLinkMessage : byte
     DetachAck = 5,
     Credit = 6,
     Global = 7,
+    LifecycleRequest = 8,
+    LifecycleAck = 9,
 }
 
 internal readonly struct NodeLinkPacket
@@ -47,11 +49,13 @@ internal static class NodeLinkCodec
         int payloadLength = 0,
         int credit = 0)
     {
-        if (kind is not (NodeLinkMessage.Relay or NodeLinkMessage.Global or NodeLinkMessage.Attach)
+        if (kind is not (NodeLinkMessage.Relay or NodeLinkMessage.Global or NodeLinkMessage.Attach
+                or NodeLinkMessage.LifecycleRequest or NodeLinkMessage.LifecycleAck)
             && (channel != 0 || payloadLength != 0))
             throw new ArgumentException("Node-link control packets cannot carry payload");
 
         if (kind is NodeLinkMessage.Relay or NodeLinkMessage.Global or NodeLinkMessage.Attach
+                or NodeLinkMessage.LifecycleRequest or NodeLinkMessage.LifecycleAck
             && (payloadLength < 0
                 || payload == null && payloadLength != 0
                 || payload != null && payloadLength > payload.Length
@@ -64,6 +68,7 @@ internal static class NodeLinkCodec
         int extra = kind == NodeLinkMessage.Relay
             ? 1 + payloadLength
             : kind is NodeLinkMessage.Global or NodeLinkMessage.Attach
+                or NodeLinkMessage.LifecycleRequest or NodeLinkMessage.LifecycleAck
                 ? payloadLength
                 : kind == NodeLinkMessage.Credit ? sizeof(int) : 0;
         byte[] result = new byte[1 + sizeof(ulong) + extra];
@@ -76,7 +81,8 @@ internal static class NodeLinkCodec
             if (payloadLength != 0)
                 Buffer.BlockCopy(payload, 0, result, 10, payloadLength);
         }
-        else if (kind is NodeLinkMessage.Global or NodeLinkMessage.Attach && payloadLength != 0)
+        else if (kind is NodeLinkMessage.Global or NodeLinkMessage.Attach
+            or NodeLinkMessage.LifecycleRequest or NodeLinkMessage.LifecycleAck && payloadLength != 0)
         {
             Buffer.BlockCopy(payload, 0, result, 9, payloadLength);
         }
@@ -119,10 +125,10 @@ internal static class NodeLinkCodec
             return new NodeLinkPacket(kind, clientId, 0, Array.Empty<byte>(), credit);
         }
 
-        if (kind == NodeLinkMessage.Global)
+        if (kind is NodeLinkMessage.Global or NodeLinkMessage.LifecycleRequest or NodeLinkMessage.LifecycleAck)
         {
-            if (clientId != 0 || data.Length == 9)
-                throw new InvalidOperationException("Invalid node-link global packet");
+            if (clientId != 0 || data.Length == 9 || data.Length > 4105)
+                throw new InvalidOperationException("Invalid node-link service packet");
             return new NodeLinkPacket(kind, 0, 0, data.AsSpan(9).ToArray());
         }
 
