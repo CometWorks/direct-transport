@@ -47,13 +47,15 @@ The server binds UDP to the `IP`/`ServerPort` from its dedicated config
 no-Steam mode pointed at the server:
 
 ```
-Interim --steamid <unique-id> --connect <server-ip>:27016
+Interim --client-id <unique-id> --connect <server-ip>:27016
 ```
 
-Pulsar exports `--connect` to the plugin as `SE_DIRECT_CONNECT`; the plugin
+The plugin reads `--connect` from the command line the game was started with,
 brings up the UDP transport and auto-joins once the main menu is reached. Give
-each concurrent client a distinct `--steamid` (they become distinct in-game
-identities). Combine with `--headless` for players-free load testing.
+each concurrent client a distinct `--client-id` (they become distinct in-game
+identities). Add `--client-name <name>` to give a client a readable name in chat
+and the player list instead of the default `Player<client-id>`. Combine with
+`--headless` for players-free load testing.
 
 ## Limitations
 

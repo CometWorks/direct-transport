@@ -1,4 +1,3 @@
-using System;
 using System.Linq;
 using HarmonyLib;
 using Sandbox.Engine.Networking;
@@ -7,19 +6,19 @@ namespace ClientPlugin.DirectPatches;
 
 // A no-Steam client has no persona, so the platform layer hands out "Player<client-id>" and the
 // server names the player and the identity from it (MyMultiplayerClient.SendPlayerData sends
-// MyGameService.OnlineName; MyPlayerCollection renames the identity from what arrives). Set
-// SE_DIRECT_NAME to give a headless client a readable name instead - useful when several of them
+// MyGameService.OnlineName; MyPlayerCollection renames the identity from what arrives). Pass
+// --client-name to give a headless client a readable name instead - useful when several of them
 // share a world with human players and have to be told apart in chat and the player list.
 [HarmonyPatch(typeof(MyGameService))]
 public static class DisplayNamePatch
 {
-    public const string NameEnvVar = "SE_DIRECT_NAME";
+    private static readonly string[] NameOption = ["client", "name"];
 
     public static string Name { get; private set; }
 
     public static void Init(Shared.Logging.IPluginLogger log)
     {
-        string name = Environment.GetEnvironmentVariable(NameEnvVar);
+        string name = CommandLine.GetOptionValue(NameOption);
         if (string.IsNullOrWhiteSpace(name))
             return;
 

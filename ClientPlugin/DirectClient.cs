@@ -16,13 +16,13 @@ namespace ClientPlugin;
 
 // Client-side activation of the non-Steam direct UDP transport.
 //
-// Activated by the SE_DIRECT_CONNECT environment variable (host:port), which
-// Pulsar exports from its --connect option when running in no-Steam
-// (--steamid) mode. When set, the transport is installed and the client
-// auto-joins the given server once the main menu is reached.
+// Activated by the --connect option (host:port) on the command line the game
+// was started with, alongside Pulsar's own no-Steam --client-id option. When
+// given, the transport is installed and the client auto-joins the given server
+// once the main menu is reached.
 public static class DirectClient
 {
-    public const string ConnectEnvVar = "SE_DIRECT_CONNECT";
+    private static readonly string[] ConnectOption = ["connect"];
 
     public static bool Enabled { get; private set; }
     public static IPEndPoint ServerEndpoint { get; private set; }
@@ -45,16 +45,17 @@ public static class DirectClient
         DirectTransport.Log = msg => log.Info(msg);
         DirectTransport.LogError = msg => log.Error(msg);
 
-        string address = Environment.GetEnvironmentVariable(ConnectEnvVar);
+        string option = CommandLine.Format(ConnectOption);
+        string address = CommandLine.GetOptionValue(ConnectOption);
         if (string.IsNullOrWhiteSpace(address))
         {
-            log.Info("Direct transport inactive (no SE_DIRECT_CONNECT set)");
+            log.Info($"Direct transport inactive (no {option} option)");
             return;
         }
 
         if (!TryParseEndpoint(address.Trim(), out IPEndPoint endpoint))
         {
-            log.Error($"Invalid {ConnectEnvVar} '{address}', expected host:port");
+            log.Error($"Invalid {option} value '{address}', expected host:port");
             return;
         }
 
@@ -172,7 +173,7 @@ public static class DirectClient
     public static bool Connect()
     {
         ulong localId = MyGameService.UserId;
-        // OnlineName is SE_DIRECT_NAME when set (DisplayNamePatch), otherwise the platform layer's
+        // OnlineName is --client-name when given (DisplayNamePatch), otherwise the platform layer's
         // "Player<client-id>". Either way it is what this client wants to be called, and the handshake
         // is the only place a no-Steam client can say so before the server names its identity.
         string localName = MyGameService.OnlineName;
