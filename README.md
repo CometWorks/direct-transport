@@ -57,6 +57,20 @@ identities). Add `--client-name <name>` to give a client a readable name in chat
 and the player list instead of the default `Player<client-id>`. Combine with
 `--headless` for players-free load testing.
 
+## Command line options (client)
+
+The client plugin reads these directly from the command line of the game
+process; Pulsar passes its arguments through to the game. They are available
+only while the plugin is loaded. Each option is accepted case-insensitively in
+the Linux (`--client-name`), Windows (`/ClientName`) and Space Engineers
+(`-clientName`) forms, with the value in the next argument or inline
+(`--connect=host:port`).
+
+| Option | Description |
+|--------|-------------|
+| `--connect ADDRESS` | Join the server at `ADDRESS` (`host:port`, port defaults to `27016`) over raw UDP as soon as the main menu is reached. Requires the matching server-side plugin. Without this option the transport stays inactive. |
+| `--client-name NAME` | Player name of a no-Steam client, shown in chat and the player list instead of the default `Player<client-id>`. Control characters are stripped and the name is capped at 64 characters. |
+
 ## Limitations
 
 - Linux, .NET (Core) runtime, dedicated-server target — matching the headless
