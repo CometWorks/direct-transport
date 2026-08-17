@@ -171,6 +171,13 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         m_serverId = serverId;
         m_clientConnected.Reset();
 
+        // A fresh link must not deliver leftovers of a previous one: on a
+        // rejoin after a disconnect the queues may still hold undrained
+        // packets from the dead connection, which the new session would
+        // misread as its own traffic.
+        foreach (var queue in m_receiveQueues.Values)
+            while (queue.TryDequeue(out _)) { }
+
         // Announce our peer id as a ulong; the server reads it back with
         // GetULong() in OnConnectionRequest. These two must use the same wire
         // type: if the client wrote a string here the server's GetULong() would

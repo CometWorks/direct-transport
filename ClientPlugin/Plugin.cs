@@ -112,7 +112,9 @@ public class Plugin : IPlugin, ICommonPlugin
 
     private void CustomUpdate()
     {
-        // TODO: Put your update code here. It is called on every simulation frame!
+        // Runs the automatic rejoin countdown after an involuntary disconnect.
+        DirectClient.Update();
+
         PatchHelpers.PatchUpdates();
     }
 
