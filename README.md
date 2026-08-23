@@ -43,8 +43,8 @@ SE_DIRECT_TRANSPORT=1
 The server binds UDP to the `IP`/`ServerPort` from its dedicated config
 (default `0.0.0.0:27016`).
 
-**Client** (Pulsar) — enable the *DirectTransport (Client)* plugin and start in
-no-Steam mode pointed at the server:
+**Client** (Pulsar) — enable the *DirectTransport (Client)* plugin and start it
+pointed at the server:
 
 ```
 Interim --client-id <unique-id> --connect <server-ip>:27016
@@ -52,9 +52,11 @@ Interim --client-id <unique-id> --connect <server-ip>:27016
 
 The plugin reads `--connect` from the command line the game was started with,
 brings up the UDP transport and auto-joins once the main menu is reached. Give
-each concurrent client a distinct `--client-id` (they become distinct in-game
-identities). Add `--client-name <name>` to give a client a readable name in chat
-and the player list instead of the default `Player<client-id>`. Combine with
+each concurrent client a distinct `--client-id`; they become distinct in-game
+identities with their own user data folders, and the option lifts the game's
+one-instance-per-machine guard so they can run side by side. Add
+`--client-name <name>` for a readable name in chat and the player list. Combine
+with the Remote plugin's `--no-steam` (Steam out of the picture entirely) and
 `--headless` for players-free load testing.
 
 ## Command line options (client)
@@ -69,7 +71,22 @@ the Linux (`--client-name`), Windows (`/ClientName`) and Space Engineers
 | Option | Description |
 |--------|-------------|
 | `--connect ADDRESS` | Join the server at `ADDRESS` (`host:port`, port defaults to `27016`) over raw UDP as soon as the main menu is reached. Requires the matching server-side plugin. Without this option the transport stays inactive. |
-| `--client-name NAME` | Player name of a no-Steam client, shown in chat and the player list instead of the default `Player<client-id>`. Control characters are stripped and the name is capped at 64 characters. |
+| `--client-id ID` | Run under the fake Steam identity `ID` (any positive 64-bit number), which also gives the client its own game user data folder and lifts the game's single-instance guard. Applied whether or not the game talks to Steam: without Steam every client would otherwise share one placeholder identity, and with Steam the option keeps a test client from joining as the machine's Steam user. |
+| `--client-name NAME` | Player name, shown in chat and the player list. Overrides the name Steam would supply. Control characters are stripped and the name is capped at 64 characters. |
+
+Without `--client-id` the game keeps whichever id it would have used on its
+own: the real Steam id, or the shared placeholder
+`MySteamService.OFFLINE_STEAM_ID` (`1234567891011`) when running without Steam.
+
+Without `--client-name` the player name is whatever the platform layer
+provides — the Steam persona when the game is talking to Steam — falling back
+to `Player` when there is none, which is the case for a client running without
+Steam.
+
+Neither `--client-id` nor `--client-name` depends on `--connect`. `--client-id`
+is applied from the Pulsar preloader, before the game's `Main` runs, because
+the game derives the user data folder from the identity long before plugins are
+loaded.
 
 ## Limitations
 

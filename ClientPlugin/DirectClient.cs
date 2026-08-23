@@ -17,9 +17,9 @@ namespace ClientPlugin;
 // Client-side activation of the non-Steam direct UDP transport.
 //
 // Activated by the --connect option (host:port) on the command line the game
-// was started with, alongside Pulsar's own no-Steam --client-id option. When
-// given, the transport is installed and the client auto-joins the given server
-// once the main menu is reached.
+// was started with, alongside the --client-id option this plugin provides (see
+// ClientIdentity). When given, the transport is installed and the client
+// auto-joins the given server once the main menu is reached.
 public static class DirectClient
 {
     private static readonly string[] ConnectOption = ["connect"];
@@ -173,9 +173,10 @@ public static class DirectClient
     public static bool Connect()
     {
         ulong localId = MyGameService.UserId;
-        // OnlineName is --client-name when given (DisplayNamePatch), otherwise the platform layer's
-        // "Player<client-id>". Either way it is what this client wants to be called, and the handshake
-        // is the only place a no-Steam client can say so before the server names its identity.
+        // OnlineName is --client-name when given, otherwise the platform layer's persona, otherwise
+        // "Player" (DisplayNamePatch). Either way it is what this client wants to be called, and the
+        // handshake is the only place a no-Steam client can say so before the server names its
+        // identity.
         string localName = MyGameService.OnlineName;
         m_log?.Info($"Establishing direct link to {ServerEndpoint} as user {localId} ('{localName}')");
         bool ok = DirectTransport.ConnectClient(ServerEndpoint, localId, localName);

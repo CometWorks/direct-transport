@@ -60,9 +60,9 @@ public class Plugin : IPlugin, ICommonPlugin
 
         // Bring up the direct UDP transport (when --connect is given) before
         // applying patches, so each [HarmonyPatch] Prepare() gate sees the
-        // correct DirectClient.Enabled state.
+        // correct DirectClient.Enabled state. The identity options are handled
+        // far earlier, from the preloader (see ClientIdentity).
         DirectClient.Init(Log);
-        DirectPatches.DisplayNamePatch.Init(Log);
 
         if (!PatchHelpers.HarmonyPatchAll(Log, new Harmony(Name)))
         {
