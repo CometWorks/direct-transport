@@ -141,8 +141,8 @@ public static class DirectClient
 
     // Kick off the standard join flow towards the configured server. The
     // descriptor is synthesised locally: no ping is needed because the
-    // endpoint is known (SE_DIRECT_CONNECT) and the server uses the
-    // well-known direct-transport id. Used by the initial auto-join
+    // endpoint is known (--connect) and the server uses the well-known
+    // direct-transport id. Used by the initial auto-join
     // (MainMenuJoinPatch) and by the rejoin countdown above.
     public static void JoinServer()
     {
