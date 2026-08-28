@@ -7,8 +7,11 @@ testing — with no human players and no Steam accounts.
 
 It is delivered as two plugins that share one transport implementation:
 
-- **DirectTransport (Client)** — loaded by [Pulsar](https://github.com/SpaceGT/Pulsar) into the game client.
-- **DirectTransport (Server)** — loaded by [Magnetar](https://magnetar.se) into the dedicated server.
+- the **client** plugin — loaded by [Pulsar](https://github.com/SpaceGT/Pulsar) into the game client.
+- the **server** plugin — loaded by [Magnetar](https://magnetar.se) into the dedicated server.
+
+Both are published under the same friendly name, *Direct Transport*; the plugin
+tooltip says which side it is for.
 
 ## How it works
 
@@ -34,7 +37,8 @@ and replication are the stock engine paths.
 Run one dedicated server (Magnetar) and any number of clients (Pulsar), all on
 the same LAN or host.
 
-**Server** (Magnetar) — enable the *DirectTransport (Server)* plugin and set:
+**Server** (Magnetar) — enable the *Direct Transport* plugin (tooltip:
+*dedicated server*) and set:
 
 ```
 SE_DIRECT_TRANSPORT=1
@@ -43,12 +47,15 @@ SE_DIRECT_TRANSPORT=1
 The server binds UDP to the `IP`/`ServerPort` from its dedicated config
 (default `0.0.0.0:27016`).
 
-**Client** (Pulsar) — enable the *DirectTransport (Client)* plugin and start it
-pointed at the server:
+**Client** (Pulsar) — enable the *Direct Transport* plugin (tooltip: *client*)
+and start the game through Pulsar's launcher, pointed at the server:
 
 ```
 Interim --client-id <unique-id> --connect <server-ip>:27016
 ```
+
+`Interim` is Pulsar's launcher for the .NET (Core) build of the game, which is
+the one this plugin targets.
 
 The plugin reads `--connect` from the command line the game was started with,
 brings up the UDP transport and auto-joins once the main menu is reached. Give
@@ -58,6 +65,15 @@ one-instance-per-machine guard so they can run side by side. Add
 `--client-name <name>` for a readable name in chat and the player list. Combine
 with the Remote plugin's `--no-steam` (Steam out of the picture entirely) and
 `--headless` for players-free load testing.
+
+If the link dies under the client — the server restarts, a gateway drops the
+session, the connection times out — the plugin rejoins on its own: it waits for
+the session to unload and the main menu to come back, holds 5 seconds, then
+joins the same server again. A deliberate exit to the menu does not trigger it,
+and a rejoin already pending is cancelled if another session is loaded
+meanwhile. The transport also writes a per-peer liveness line (connection state,
+time since the last packet, ping) to the console every 10 seconds, which is how
+one-way silence is told apart from a dead socket.
 
 ## Command line options (client)
 
@@ -79,9 +95,10 @@ own: the real Steam id, or the shared placeholder
 `MySteamService.OFFLINE_STEAM_ID` (`1234567891011`) when running without Steam.
 
 Without `--client-name` the player name is whatever the platform layer
-provides — the Steam persona when the game is talking to Steam — falling back
-to `Player` when there is none, which is the case for a client running without
-Steam.
+provides — the Steam persona when the game is talking to Steam. When that name
+is empty, which is the case for a client running without Steam, it falls back
+to `Player` — but only if `--client-id` was given, because with neither option
+present the plugin leaves the game's own naming completely untouched.
 
 Neither `--client-id` nor `--client-name` depends on `--connect`. `--client-id`
 is applied from the Pulsar preloader, before the game's `Main` runs, because
@@ -90,8 +107,9 @@ loaded.
 
 ## Limitations
 
-- Linux, .NET (Core) runtime, dedicated-server target — matching the headless
-  test use case.
+- .NET (Core) runtime (`CoreCLR`), dedicated-server target — matching the
+  headless test use case. Developed and tested on Linux; nothing in the plugins
+  is platform-specific and neither manifest restricts the platform.
 - No encryption or authentication: intended for trusted, isolated test networks.
 - One server per client process (a client joins a single server at a time).
 
@@ -101,5 +119,33 @@ loaded.
 dotnet build DirectTransport.sln -c Release
 ```
 
-Reference paths (Space Engineers, Dedicated Server, Pulsar, Magnetar) are
-auto-detected in `Directory.Build.props`; override there if needed.
+A successful build also copies each plugin into the matching *Local* plugin
+folder of Pulsar and Magnetar (`ClientPlugin/Deploy.sh`, `ServerPlugin/Deploy.sh`,
+`.bat` on Windows). Set `PULSAR_LOCAL_DIR` / `MAGNETAR_LOCAL_DIR` if your
+installation is somewhere else than those scripts expect — the deploy step
+reports which folder it skipped.
+
+### Folder path overrides
+
+`Directory.Build.props` **is** committed and declares the four folder paths the
+build needs — `Bin64` (Space Engineers), `Dedicated64` (Dedicated Server),
+`Pulsar` and `Magnetar` — with empty defaults. It optionally imports
+`Directory.Build.props.user` from the repository root, which is **not**
+committed (matched by `*.user` in `.gitignore`), so each contributor keeps their
+own local paths there.
+
+To override a path manually, copy the first `PropertyGroup` of
+`Directory.Build.props` into `Directory.Build.props.user`, wrapped into a
+top-level `<Project>` element, and fill in your paths. Running
+
+```
+python3 setup.py
+```
+
+writes that file for you with the install locations auto-detected from Steam,
+creating it if needed and keeping any other overrides already in it.
+
+Leaving a path empty — or having no `Directory.Build.props.user` at all — falls
+back to the platform-specific auto-detection at the end of
+`Directory.Build.props`. A path that ends up pointing nowhere fails the build in
+a prebuild step (`verify_props.sh` / `.bat`) with the offending path named.

@@ -14,7 +14,7 @@
         testing). Activated by the --connect option on the command line. Also
         provides --client-id (fake Steam identity, own user data folder,
         concurrent instances) and --client-name (player name).
-        Requires the matching DirectTransport (Server) plugin on the server.
+        Requires the matching server-side Direct Transport plugin on the server.
     </Description>
 
     <SourceDirectories>
