@@ -1,27 +1,42 @@
 <Project>
-    <!-- Plugin version (committed, shared by all contributors) -->
-    <Import Project="Version.Build.props" />
+    <!-- Build configuration shared by all contributors. Committed.
 
+         The folder paths below are declared empty here and can be overridden per
+         developer in Directory.Build.props.user (see the import further down),
+         which is NOT committed. Anything left empty is auto-detected for the
+         local platform by the property groups at the end of this file. -->
     <PropertyGroup>
-        <!-- Folder containing SpaceEngineers.exe.
-             Fill the path between the tags to override; leave empty to use the
-             platform-specific auto-detection below. -->
+        <!-- Folder containing SpaceEngineers.exe -->
         <Bin64></Bin64>
 
         <!-- Folder containing the Pulsar installation (the directory that holds
-             Libraries/Legacy/PluginSdk.dll). Fill the path between the tags to override;
-             leave empty to use the platform-specific auto-detection below. -->
+             Libraries/Legacy/PluginSdk.dll) -->
         <Pulsar></Pulsar>
 
         <!-- Folder containing the Magnetar installation (the directory that holds
-             Bin/PluginSdk.dll). Fill the path between the tags to override; leave
-             empty to use the platform-specific auto-detection below. -->
+             Bin/PluginSdk.dll) -->
         <Magnetar></Magnetar>
 
-        <!-- Folder containing SpaceEngineersDedicated.exe.
-             Fill the path between the tags to override; leave empty to use the
-             platform-specific auto-detection below. -->
+        <!-- Folder containing SpaceEngineersDedicated.exe -->
         <Dedicated64></Dedicated64>
+    </PropertyGroup>
+
+    <!-- Plugin version (committed, shared by all contributors) -->
+    <Import Project="Version.Build.props" />
+
+    <!-- Local developer overrides for the folders above; ignored by Git (*.user).
+         Copy the PropertyGroup above into Directory.Build.props.user, wrapped into
+         a top-level Project element, and fill in your local paths there. Running
+         setup.py writes that file for you. -->
+    <Import Project="$(MSBuildThisFileDirectory)Directory.Build.props.user"
+            Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.props.user')" />
+
+    <!-- Repository root (this file lives in it). Used instead of $(SolutionDir) so
+         the prebuild verification scripts are found whether the build is driven
+         from the solution or a single project. $(MSBuildThisFileDirectory) ends
+         with a directory separator. -->
+    <PropertyGroup>
+        <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
     </PropertyGroup>
 
     <!-- User home, resolved once for the Linux auto-detection below -->
@@ -29,7 +44,7 @@
         <_UserHome>$([System.Environment]::GetFolderPath(SpecialFolder.UserProfile))</_UserHome>
     </PropertyGroup>
 
-    <!-- Auto-detect Bin64 (Space Engineers, Steam app 244850) when not explicitly set above -->
+    <!-- Auto-detect Bin64 (Space Engineers, Steam app 244850) when not set in Directory.Build.props.user -->
     <PropertyGroup>
         <!-- Windows: Steam App registry key -->
         <_SeInstallLocation Condition=" '$(Bin64)' == '' AND $([MSBuild]::IsOSPlatform('Windows')) ">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 244850@InstallLocation)</_SeInstallLocation>
@@ -44,7 +59,7 @@
         <Bin64 Condition=" '$(Bin64)' == '' AND '$(_UserHome)' != '' AND Exists('$(_UserHome)/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/SpaceEngineers/Bin64') ">$(_UserHome)/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/SpaceEngineers/Bin64</Bin64>
     </PropertyGroup>
 
-    <!-- Auto-detect the Pulsar install location when not explicitly set above.
+    <!-- Auto-detect the Pulsar install location when not set in Directory.Build.props.user.
          Default locations:
            Windows: %AppData%\Pulsar   (Environment.SpecialFolder.ApplicationData)
            Linux:   ~/.local/share/Pulsar
@@ -61,7 +76,7 @@
              on it cannot evaluate correctly at this point. -->
     </PropertyGroup>
 
-    <!-- Auto-detect the Magnetar install location when not explicitly set above.
+    <!-- Auto-detect the Magnetar install location when not set in Directory.Build.props.user.
          Default locations:
            Windows: %AppData%\Magnetar   (Environment.SpecialFolder.ApplicationData)
            Linux:   ~/.local/share/Magnetar
@@ -87,7 +102,7 @@
         <MagnetarBin Condition=" '$(MagnetarBin)' == '' AND '$(Magnetar)' != '' AND $([MSBuild]::IsOSPlatform('Windows')) AND '$(TargetFramework)' != '' AND !$(TargetFramework.StartsWith('net4')) ">$([System.IO.Path]::Combine('$(Magnetar)', 'Libraries', 'MagnetarInterim'))</MagnetarBin>
     </PropertyGroup>
 
-    <!-- Auto-detect Dedicated64 (Dedicated Server, Steam app 298740) when not explicitly set above -->
+    <!-- Auto-detect Dedicated64 (Dedicated Server, Steam app 298740) when not set in Directory.Build.props.user -->
     <PropertyGroup>
         <!-- Windows: Steam App registry key -->
         <_DsInstallLocation Condition=" '$(Dedicated64)' == '' AND $([MSBuild]::IsOSPlatform('Windows')) ">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 298740@InstallLocation)</_DsInstallLocation>

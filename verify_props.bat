@@ -1,12 +1,13 @@
-REM This file is ran in a pre-build event when data from "Directory.Build.props" or
+REM This file is ran in a pre-build event when data from "Directory.Build.props[.user]" or
 REM "Directory.Build.targets" is required.
 REM It assumes "Directory.Build.props", "Directory.Build.targets" and "verify_props"
-REM are all in the solution directory
+REM are all in the repository root
 
 @echo off
 setlocal
 
-set SOLUTION=%~dp0
+set REPO=%~dp0
+set STATUS=0
 
 REM Loop through each parameter provided
 for %%a in (%*) do (
@@ -15,8 +16,9 @@ for %%a in (%*) do (
     if not exist "%%~a" (
 
         REM Raise an error for each bad path - this will prevent the build from completing.
-        echo ERROR: Invalid path "%%~a" in "%SOLUTION%Directory.Build.props" or "%SOLUTION%Directory.Build.targets" 1>&2
+        echo ERROR: Invalid path "%%~a" in "%REPO%Directory.Build.props[.user]" or "%REPO%Directory.Build.targets" 1>&2
+        set STATUS=1
     )
 )
 
-exit /b 0
+exit /b %STATUS%

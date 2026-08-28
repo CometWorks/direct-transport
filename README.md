@@ -115,18 +115,6 @@ loaded.
 
 ## Building
 
-`Directory.Build.props` holds the reference paths (Space Engineers, Dedicated
-Server, Pulsar, Magnetar) and is not in the repository. Create it once from
-`Directory.Build.props.template` — either by hand or by running
-
-```
-python3 setup.py
-```
-
-which copies the template and fills in the game and dedicated-server paths from
-the local Steam install. The remaining paths are auto-detected by the props
-file itself; override any of them there if needed. Then build:
-
 ```
 dotnet build DirectTransport.sln -c Release
 ```
@@ -136,3 +124,28 @@ folder of Pulsar and Magnetar (`ClientPlugin/Deploy.sh`, `ServerPlugin/Deploy.sh
 `.bat` on Windows). Set `PULSAR_LOCAL_DIR` / `MAGNETAR_LOCAL_DIR` if your
 installation is somewhere else than those scripts expect — the deploy step
 reports which folder it skipped.
+
+### Folder path overrides
+
+`Directory.Build.props` **is** committed and declares the four folder paths the
+build needs — `Bin64` (Space Engineers), `Dedicated64` (Dedicated Server),
+`Pulsar` and `Magnetar` — with empty defaults. It optionally imports
+`Directory.Build.props.user` from the repository root, which is **not**
+committed (matched by `*.user` in `.gitignore`), so each contributor keeps their
+own local paths there.
+
+To override a path manually, copy the first `PropertyGroup` of
+`Directory.Build.props` into `Directory.Build.props.user`, wrapped into a
+top-level `<Project>` element, and fill in your paths. Running
+
+```
+python3 setup.py
+```
+
+writes that file for you with the install locations auto-detected from Steam,
+creating it if needed and keeping any other overrides already in it.
+
+Leaving a path empty — or having no `Directory.Build.props.user` at all — falls
+back to the platform-specific auto-detection at the end of
+`Directory.Build.props`. A path that ends up pointing nowhere fails the build in
+a prebuild step (`verify_props.sh` / `.bat`) with the offending path named.
