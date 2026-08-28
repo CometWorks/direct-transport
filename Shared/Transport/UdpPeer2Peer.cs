@@ -61,8 +61,38 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
     // join can wait for the link before sending the reliable handshake.
     private readonly ManualResetEventSlim m_clientConnected = new(false);
 
+    // Engine events queued for delivery on the engine's update thread. The
+    // engine assumes IMyPeer2Peer events arrive there: Steam raises them from
+    // SteamAPI.RunCallbacks() inside MySteamService.Update() and EOS routes
+    // them through InvokeOnMainThread. The handlers rely on that -
+    // MyMultiplayerClient.Peer2Peer_ConnectionFailed tears down the whole
+    // session, GUI screens included, synchronously. Raising the events
+    // straight from the LiteNetLib poll thread crashed the client with
+    // "Thread unsafe access to GUI screens" followed by a render-thread NRE
+    // whenever the server dropped the link. DispatchEngineEvents drains this
+    // queue; DirectTransport hooks it to IMyGameService.OnUpdate, which fires
+    // from MyGameService.Update() on the engine's update thread.
+    private readonly ConcurrentQueue<Action> m_engineEvents = new();
+
     public event Action<ulong> SessionRequest;
     public event Action<ulong, string> ConnectionFailed;
+
+    // Drain queued SessionRequest / ConnectionFailed events. Must be called
+    // on the engine's update thread; see m_engineEvents.
+    public void DispatchEngineEvents()
+    {
+        while (m_engineEvents.TryDequeue(out Action raise))
+        {
+            try
+            {
+                raise();
+            }
+            catch (Exception e)
+            {
+                DirectTransport.LogError("Engine event handler failed: " + e);
+            }
+        }
+    }
 
     public UdpPeer2Peer(bool isServer)
     {
@@ -141,6 +171,13 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         m_serverId = serverId;
         m_clientConnected.Reset();
 
+        // A fresh link must not deliver leftovers of a previous one: on a
+        // rejoin after a disconnect the queues may still hold undrained
+        // packets from the dead connection, which the new session would
+        // misread as its own traffic.
+        foreach (var queue in m_receiveQueues.Values)
+            while (queue.TryDequeue(out _)) { }
+
         // Announce our peer id as a ulong; the server reads it back with
         // GetULong() in OnConnectionRequest. These two must use the same wire
         // type: if the client wrote a string here the server's GetULong() would
@@ -210,6 +247,10 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         try { m_pollThread?.Join(500); } catch { }
         try { m_manager.Stop(); } catch { }
         m_peersById.Clear();
+        // Drop undelivered engine events: firing a stale ConnectionFailed
+        // after the transport is gone would tear down whatever session
+        // replaced this one.
+        while (m_engineEvents.TryDequeue(out _)) { }
     }
 
     // --- Send / receive ---------------------------------------------------
@@ -328,9 +369,13 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
             m_peersById[clientId] = peer;
             DirectTransport.Log($"Accepted client {clientId} from {request.RemoteEndPoint}");
 
-            // Let the engine register the session; its handler calls
-            // AcceptSession, which we already satisfy via the map above.
-            SessionRequest?.Invoke(clientId);
+            // Let the engine register the session on its update thread; its
+            // handler calls AcceptSession, which we already satisfy via the
+            // map above, so the deferred delivery loses nothing. Steam
+            // delivers its SessionRequest callback the same way (from
+            // RunCallbacks on the update thread, after packets may already
+            // be arriving on the network thread).
+            m_engineEvents.Enqueue(() => SessionRequest?.Invoke(clientId));
         }
         catch (Exception e)
         {
@@ -359,7 +404,14 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
         DirectTransport.Log($"Peer {id} disconnected: {disconnectInfo.Reason}");
         if (id != 0uL)
-            ConnectionFailed?.Invoke(id, disconnectInfo.Reason.ToString());
+        {
+            // Deliver on the engine's update thread. On the client the
+            // handler (MyMultiplayerClient.Peer2Peer_ConnectionFailed) raises
+            // HostLeft and unloads the session; invoked from this poll thread
+            // it corrupts the GUI/render state and crashes the game.
+            string reason = disconnectInfo.Reason.ToString();
+            m_engineEvents.Enqueue(() => ConnectionFailed?.Invoke(id, reason));
+        }
     }
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)

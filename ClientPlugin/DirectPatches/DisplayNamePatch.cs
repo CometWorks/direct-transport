@@ -1,46 +1,47 @@
-using System;
-using System.Linq;
 using HarmonyLib;
 using Sandbox.Engine.Networking;
 
 namespace ClientPlugin.DirectPatches;
 
-// A no-Steam client has no persona, so the platform layer hands out "Player<client-id>" and the
-// server names the player and the identity from it (MyMultiplayerClient.SendPlayerData sends
-// MyGameService.OnlineName; MyPlayerCollection renames the identity from what arrives). Set
-// SE_DIRECT_NAME to give a headless client a readable name instead - useful when several of them
-// share a world with human players and have to be told apart in chat and the player list.
+// Resolves the player name, in priority order:
+//
+//   1. --client-name, which wins even when Steam offers a persona: a test
+//      client has to be recognisable in chat and the player list regardless of
+//      whose machine it happens to run on.
+//   2. Whatever the platform layer provides - the Steam persona when the game
+//      is talking to Steam.
+//   3. ClientIdentity.DefaultName, because a client without Steam has no
+//      persona to fall back on: MySteamService only assigns a user name on its
+//      online branch, so the game would otherwise show an empty one.
+//
+// The name reaches the server in the join message
+// (MyMultiplayerClient.SendPlayerData sends MyGameService.OnlineName) and
+// MyPlayerCollection renames the identity from what arrives, so patching the
+// two getters covers chat and the player list as well as the local UI.
+[HarmonyPatchCategory(ClientIdentity.PatchCategory)]
 [HarmonyPatch(typeof(MyGameService))]
 public static class DisplayNamePatch
 {
-    public const string NameEnvVar = "SE_DIRECT_NAME";
+    // Patched for an explicit --client-name, and for a fake identity, which
+    // brings no persona with it and so needs the fallback. A plain Steam
+    // session with neither option keeps the game's own naming untouched.
+    // ReSharper disable once UnusedMember.Global
+    public static bool Prepare() =>
+        ClientIdentity.Name is not null || ClientIdentity.ClientId.HasValue;
 
-    public static string Name { get; private set; }
-
-    public static void Init(Shared.Logging.IPluginLogger log)
-    {
-        string name = Environment.GetEnvironmentVariable(NameEnvVar);
-        if (string.IsNullOrWhiteSpace(name))
-            return;
-
-        // The name travels in the join message and ends up in chat lines and the player list, so
-        // keep it to something a name can be: no control characters, and bounded.
-        Name = new string(name.Trim().Where(character => !char.IsControl(character)).ToArray());
-        if (Name.Length > 64)
-            Name = Name.Substring(0, 64);
-        if (Name.Length == 0)
-            Name = null;
-        else
-            log.Info($"Direct transport client name set to '{Name}'");
-    }
-
-    public static bool Prepare() => DirectClient.Enabled && Name != null;
-
+    // ReSharper disable once UnusedMember.Global
     [HarmonyPatch(nameof(MyGameService.OnlineName), MethodType.Getter)]
     [HarmonyPostfix]
-    public static void OnlineName(ref string __result) => __result = Name;
+    public static void OnlineName(ref string __result) => __result = Resolve(__result);
 
+    // ReSharper disable once UnusedMember.Global
     [HarmonyPatch(nameof(MyGameService.UserName), MethodType.Getter)]
     [HarmonyPostfix]
-    public static void UserName(ref string __result) => __result = Name;
+    public static void UserName(ref string __result) => __result = Resolve(__result);
+
+    // MyGameService hands out null (OnlineName) or string.Empty (UserName)
+    // when the platform layer has no name, so both count as "not provided".
+    private static string Resolve(string provided) =>
+        ClientIdentity.Name
+        ?? (string.IsNullOrWhiteSpace(provided) ? ClientIdentity.DefaultName : provided);
 }

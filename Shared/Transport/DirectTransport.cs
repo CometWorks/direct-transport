@@ -92,6 +92,14 @@ public static class DirectTransport
 
         var networking = new UdpNetworking(service, Peer);
         MyServiceManager.Instance.AddService<IMyNetworking>(networking);
+
+        // Deliver the transport's SessionRequest / ConnectionFailed events on
+        // the engine's update thread. OnUpdate fires from IMyGameService
+        // .Update(), the exact point where Steam and EOS deliver their P2P
+        // callbacks; the engine's handlers (session teardown on HostLeft in
+        // particular) are only safe on that thread.
+        service.OnUpdate += Peer.DispatchEngineEvents;
+
         Log("Registered UDP networking service");
     }
 }

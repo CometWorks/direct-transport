@@ -58,11 +58,11 @@ public class Plugin : IPlugin, ICommonPlugin
         var gameVersion = MyFinalBuildConstants.APP_VERSION_STRING.ToString();
         Common.SetPlugin(this, gameVersion, MyFileSystem.UserDataPath);
 
-        // Bring up the direct UDP transport (when SE_DIRECT_CONNECT is set)
-        // before applying patches, so each [HarmonyPatch] Prepare() gate sees
-        // the correct DirectClient.Enabled state.
+        // Bring up the direct UDP transport (when --connect is given) before
+        // applying patches, so each [HarmonyPatch] Prepare() gate sees the
+        // correct DirectClient.Enabled state. The identity options are handled
+        // far earlier, from the preloader (see ClientIdentity).
         DirectClient.Init(Log);
-        DirectPatches.DisplayNamePatch.Init(Log);
 
         if (!PatchHelpers.HarmonyPatchAll(Log, new Harmony(Name)))
         {
@@ -112,7 +112,9 @@ public class Plugin : IPlugin, ICommonPlugin
 
     private void CustomUpdate()
     {
-        // TODO: Put your update code here. It is called on every simulation frame!
+        // Runs the automatic rejoin countdown after an involuntary disconnect.
+        DirectClient.Update();
+
         PatchHelpers.PatchUpdates();
     }
 
