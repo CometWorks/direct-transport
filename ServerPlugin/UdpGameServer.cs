@@ -17,11 +17,16 @@ public sealed class UdpGameServer : IMyGameServer
     public bool Running { get; private set; }
 
     public event Action PlatformConnected;
-    public event Action<string> PlatformDisconnected;
-    public event Action<string> PlatformConnectionFailed;
     public event Action<ulong, JoinResult, ulong, string> ValidateAuthTicketResponse;
     public event Action<ulong, ulong, bool, bool> UserGroupStatusResponse;
-    public event Action<sbyte> PolicyResponse;
+
+    // Never raised here, but required by IMyGameServer: there is no platform to
+    // drop us or refuse us (Start always succeeds locally) and no Steam policy
+    // to report. Accessors are empty rather than field-like so the unraised
+    // backing delegates do not warn.
+    public event Action<string> PlatformDisconnected { add { } remove { } }
+    public event Action<string> PlatformConnectionFailed { add { } remove { } }
+    public event Action<sbyte> PolicyResponse { add { } remove { } }
 
     public bool Start(System.Net.IPEndPoint serverEndpoint, ushort steamPort, string versionString)
     {
