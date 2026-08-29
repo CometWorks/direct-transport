@@ -35,13 +35,23 @@ DEDICATED_APP_ID = "298740"  # Space Engineers Dedicated Server (DedicatedServer
 # Local, git-ignored overrides of the folder paths declared in Directory.Build.props
 USER_PROPS = "Directory.Build.props.user"
 
-USER_PROPS_TEMPLATE = """<Project>
+USER_PROPS_TEMPLATE = """\
+<Project>
   <PropertyGroup>
-    <!-- Folder containing SpaceEngineers.exe (empty = auto-detect) -->
+    <!-- Folder containing SpaceEngineers.exe (empty = auto-detect from Steam) -->
     <Bin64>{bin64}</Bin64>
 
-    <!-- Folder containing SpaceEngineersDedicated.exe (empty = auto-detect) -->
+    <!-- Folder containing SpaceEngineersDedicated.exe (empty = auto-detect from Steam) -->
     <Dedicated64>{dedicated64}</Dedicated64>
+
+    <!-- Pulsar plugin loader folder used for automatic deployment (empty = auto-detect) -->
+    <Pulsar></Pulsar>
+
+    <!-- Magnetar installation folder, holds the launchers (empty = auto-detect) -->
+    <Magnetar></Magnetar>
+
+    <!-- Magnetar config folder used for automatic deployment (empty = auto-detect) -->
+    <MagnetarData></MagnetarData>
   </PropertyGroup>
 </Project>
 """
