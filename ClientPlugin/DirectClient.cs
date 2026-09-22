@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using LiteNetLib;
 using Sandbox.Engine.Networking;
@@ -97,7 +98,7 @@ public static class DirectClient
 
     // Called every simulation frame from Plugin.Update on the update thread.
     // Runs the rejoin countdown: wait until the dropped session has fully
-    // unloaded and the main menu is open, then hold RejoinDelayMs and rejoin.
+    // unloaded and the main menu is back, then hold RejoinDelayMs and rejoin.
     public static void Update()
     {
         if (!Enabled || !m_rejoinArmed)
@@ -118,9 +119,17 @@ public static class DirectClient
             return;
         }
 
-        // The host-left message box sits on top of the menu without hiding
-        // it, so the menu stays OPENED underneath and this passes unattended.
-        if (!MyScreenManager.IsScreenOfTypeOpen(typeof(MyGuiScreenMainMenu)))
+        // T-0172: THE MENU IS OFTEN HIDDEN, NOT OPENED, and the old check here demanded OPENED.
+        // The claim it carried - that the message box sits on top without hiding the menu - holds
+        // for the host-left box but not for the one that reports a join which never completed:
+        // MyJoinGameHelper.OnJoinFailed calls MyGuiSandbox.Show(), whose canHideOthers argument
+        // defaults to TRUE, so MyScreenManager.AddScreen calls HideScreen() on the freshly created
+        // main menu (CanBeHidden is true on one) and leaves it in State HIDDEN.
+        // MyScreenManager.IsScreenOfTypeOpen matches only State == OPENED, so the countdown never
+        // started and an unattended client sat in the menu for the rest of its life - nobody is
+        // there to dismiss the box. Over every bench client log that armed a rejoin and then kept
+        // logging for at least 30 s: 89/89 rejoined when no box opened, 0/45 when one did.
+        if (!MainMenuIsBack())
             return;
 
         long now = Environment.TickCount64;
@@ -135,8 +144,34 @@ public static class DirectClient
 
         m_rejoinArmed = false;
         m_rejoinAtMs = 0;
+
+        // Dismiss whatever error box is up first. JoinGame() does not refuse while one is open,
+        // but nothing in an unattended client ever closes it, and leaving it there means the next
+        // failure hides the menu again behind a second box.
+        foreach (MyGuiScreenBase screen in MyScreenManager.Screens.ToArray())
+        {
+            if (screen is MyGuiScreenMessageBox)
+                screen.CloseScreenNow();
+        }
+
         m_log?.Info($"Rejoining {ServerEndpoint}");
         JoinServer();
+    }
+
+    // True once the main menu is back, whether or not a modal box has hidden it. Deliberately not
+    // MyScreenManager.IsScreenOfTypeOpen - see the note in Update() above. A menu on its way out
+    // does not count: the rejoin would race the screen that replaces it.
+    private static bool MainMenuIsBack()
+    {
+        foreach (MyGuiScreenBase screen in MyScreenManager.Screens)
+        {
+            if (screen is not MyGuiScreenMainMenu)
+                continue;
+            if (screen.State == MyGuiScreenState.CLOSING || screen.State == MyGuiScreenState.CLOSED)
+                continue;
+            return true;
+        }
+        return false;
     }
 
     // Kick off the standard join flow towards the configured server. The
