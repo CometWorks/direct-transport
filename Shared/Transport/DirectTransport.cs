@@ -25,8 +25,12 @@ public static class DirectTransport
 
     public const int DefaultPort = 27016;
 
-    // Wait this long for the client link before giving up on a join.
-    public const int ConnectTimeoutMs = 15000;
+    // Wait this long for the client link before giving up on a join. A cluster gateway may HOLD a join
+    // for up to 20 s while the player's home partition loads (it answers only when it can route the
+    // client), so the wait and the connect attempts (UdpPeer2Peer: 50 x 500 ms, ~25.7 s measured
+    // pro rata from 20 attempts = 10.7 s) must both outlast that hold. At 20 attempts the link died
+    // at 10.7 s under a 12 s hold and the late accept found no peer (PeerNotFound, 2026-09-25 06:07).
+    public const int ConnectTimeoutMs = 27000;
 
     // Logging hooks, set by the hosting plugin (Shared has no logger of its
     // own). Default to no-ops so the transport is safe to touch pre-init.

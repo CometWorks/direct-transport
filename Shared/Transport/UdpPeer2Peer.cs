@@ -106,7 +106,8 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
             // frame does not look like a dropped peer.
             DisconnectTimeout = 30000,
             ReconnectDelay = 500,
-            MaxConnectAttempts = 20,
+            // Covers a gateway's held join; see DirectTransport.ConnectTimeoutMs.
+            MaxConnectAttempts = 50,
         };
     }
 
