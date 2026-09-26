@@ -37,6 +37,14 @@ public static class DirectClient
     // Deliberate local disconnects (the engine closing the session when the
     // user exits to the menu) surface as DisconnectPeerCalled and do not arm.
     private const int RejoinDelayMs = 5000;
+    // Set when the engine began unloading the session while the link was still up: the session
+    // ended on this side (the player exited, or the server sent this client back to the menu, e.g.
+    // the cluster's graceful shutdown). The link drop that follows is a consequence, not a failure,
+    // and must not rejoin. Through the cluster gateway it arrives as RemoteConnectionClose (the node
+    // detaches the leaving client and the gateway closes the link before the engine closes its own),
+    // so the DisconnectPeerCalled test alone never saw it: T-0248's probe client, sent to the menu at
+    // a cluster stop, rejoined every ~30 s against the stopped cluster.
+    private static bool m_sessionEndedLocally;
     private static bool m_rejoinArmed;
     private static long m_rejoinAtMs;
 
@@ -75,6 +83,7 @@ public static class DirectClient
         // subscribed before the engine's own handler, so this only sets flags
         // and leaves the session teardown to the engine.
         DirectTransport.Peer.ConnectionFailed += OnConnectionFailed;
+        MySession.OnUnloading += OnSessionUnloading;
 
         log.Info($"Direct transport client active, will connect to {endpoint}");
     }
@@ -89,11 +98,25 @@ public static class DirectClient
         // else means the link died under us and is worth rejoining.
         if (reason == DisconnectReason.DisconnectPeerCalled.ToString())
             return;
+        if (m_sessionEndedLocally)
+        {
+            m_sessionEndedLocally = false;
+            m_log?.Info($"Link to {ServerEndpoint} closed ({reason}) after the session ended on this side; not rejoining");
+            return;
+        }
 
         m_log?.Info($"Link to {ServerEndpoint} lost ({reason});"
             + $" rejoining {RejoinDelayMs / 1000}s after returning to the main menu");
         m_rejoinArmed = true;
         m_rejoinAtMs = 0;
+    }
+
+    // MySession.Unload start, update thread. An involuntary drop reaches here only after the poll
+    // thread saw the link go (the engine unloads in response to ConnectionFailed), so the link is
+    // already down and nothing is recorded.
+    private static void OnSessionUnloading()
+    {
+        m_sessionEndedLocally = Enabled && DirectTransport.Peer.ServerLinkUp;
     }
 
     // Called every simulation frame from Plugin.Update on the update thread.
@@ -213,6 +236,7 @@ public static class DirectClient
         // handshake is the only place a no-Steam client can say so before the server names its
         // identity.
         string localName = MyGameService.OnlineName;
+        m_sessionEndedLocally = false;
         m_log?.Info($"Establishing direct link to {ServerEndpoint} as user {localId} ('{localName}')");
         bool ok = DirectTransport.ConnectClient(ServerEndpoint, localId, localName);
         if (!ok)
