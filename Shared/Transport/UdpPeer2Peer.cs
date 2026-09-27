@@ -166,6 +166,10 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
     // Client: connect to the server and block until the link is up (or the
     // timeout elapses). Returns true on success. The server id is the ulong
     // the engine will use to address the server.
+    // Client: true while the link to the server is up (set on Connected, cleared on the poll
+    // thread the moment LiteNetLib reports the disconnect, before the engine event is queued).
+    public bool ServerLinkUp => !m_isServer && m_serverId != 0uL && m_peersById.ContainsKey(m_serverId);
+
     public bool ConnectToServer(IPEndPoint endpoint, ulong serverId, ulong localId, string localName, int timeoutMs)
     {
         m_serverEndpoint = endpoint;
