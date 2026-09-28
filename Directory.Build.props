@@ -57,10 +57,10 @@
         <Pulsar Condition="'$(Pulsar)' == '' and '$(XDG_CONFIG_HOME)' != ''">$(XDG_CONFIG_HOME)/Pulsar</Pulsar>
         <Pulsar Condition="'$(Pulsar)' == ''">$(HOME)/.config/Pulsar</Pulsar>
 
-        <!-- Magnetar installs into $XDG_DATA_HOME/Magnetar, but keeps its config,
-             Local plugins, sources and profiles under $XDG_CONFIG_HOME/Magnetar. -->
-        <Magnetar Condition="'$(Magnetar)' == '' and '$(XDG_DATA_HOME)' != ''">$(XDG_DATA_HOME)/Magnetar</Magnetar>
-        <Magnetar Condition="'$(Magnetar)' == ''">$(HOME)/.local/share/Magnetar</Magnetar>
+        <!-- Magnetar is deployed into $XDG_CONFIG_HOME/Magnetar (~/.config/Magnetar), next to its
+             config, Local plugins, sources and profiles. -->
+        <Magnetar Condition="'$(Magnetar)' == '' and '$(XDG_CONFIG_HOME)' != ''">$(XDG_CONFIG_HOME)/Magnetar</Magnetar>
+        <Magnetar Condition="'$(Magnetar)' == ''">$(HOME)/.config/Magnetar</Magnetar>
 
         <MagnetarData Condition="'$(MagnetarData)' == '' and '$(XDG_CONFIG_HOME)' != ''">$(XDG_CONFIG_HOME)/Magnetar</MagnetarData>
         <MagnetarData Condition="'$(MagnetarData)' == ''">$(HOME)/.config/Magnetar</MagnetarData>
