@@ -159,7 +159,7 @@ installs on a secondary Steam library are found as well.
 | Loader folder  | Windows                                          | Linux                                                 |
 |----------------|--------------------------------------------------|-------------------------------------------------------|
 | `Pulsar`       | `%AppData%\Pulsar`                               | `$XDG_CONFIG_HOME/Pulsar` (`~/.config/Pulsar`)        |
-| `Magnetar`     | the `Magnetar\` tree next to the server install  | `$XDG_DATA_HOME/Magnetar` (`~/.local/share/Magnetar`) |
+| `Magnetar`     | the `Magnetar\` tree next to the server install  | `$XDG_CONFIG_HOME/Magnetar` (`~/.config/Magnetar`)    |
 | `MagnetarData` | `<Magnetar>\MagnetarLegacy` or `\MagnetarInterim`, named after the launcher | `$XDG_CONFIG_HOME/Magnetar` (`~/.config/Magnetar`) |
 
 The build fails with a clear message if `Bin64`, `Dedicated64` or Magnetar's
