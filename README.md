@@ -119,8 +119,10 @@ loaded.
 dotnet build DirectTransport.sln -c Release
 ```
 
-Both plugins are deployed into their loader automatically, see *Deployment*
-below.
+Load the working copy through loader development folders: start Pulsar or
+Magnetar with `-sources` and add the repository with the Sources button. Builds
+deploy only if `Pulsar` or `MagnetarData` is set in `Directory.Build.props.user`
+or passed as `-p:Pulsar=...` / `-p:MagnetarData=...`, see *Deployment* below.
 
 ### Folder path overrides
 
@@ -129,11 +131,13 @@ paths with empty defaults:
 
 - `Bin64` — the folder containing `SpaceEngineers.exe`
 - `Dedicated64` — the folder containing `SpaceEngineersDedicated.exe`
-- `Pulsar` — the Pulsar folder the client plugin is deployed into after each build
+- `Pulsar` — the Pulsar folder the client plugin is deployed into after each
+  build, empty by default (no deployment)
 - `Magnetar` — the Magnetar installation folder, the one holding the launcher
   executables and their `Libraries`, which is where `PluginSdk.dll` is referenced from
 - `MagnetarData` — the Magnetar config folder the server plugin is deployed into,
-  the one holding `Local`, `Sources` and `Profiles`
+  the one holding `Local`, `Sources` and `Profiles`, empty by default (no
+  deployment)
 
 It optionally imports `Directory.Build.props.user` from the repository root,
 which is **not** committed (matched by `*.user` in `.gitignore`), so each
@@ -150,33 +154,50 @@ python3 setup.py
 writes that file for you with the auto-detected install locations, creating it
 if needed and keeping any other overrides already in it.
 
-Leaving a path empty — or having no `Directory.Build.props.user` at all — falls
-back to the auto-detection in `Directory.Build.props`, which reads the Steam
-registry keys on Windows and the usual Steam locations on Linux, then resolves
-the game and the Dedicated Server through Steam's `libraryfolders.vdf`, so
-installs on a secondary Steam library are found as well.
+Leaving `Bin64`, `Dedicated64` or `Magnetar` empty — or having no
+`Directory.Build.props.user` at all — falls back to the auto-detection in
+`Directory.Build.props`, which reads the Steam registry keys on Windows and the
+usual Steam locations on Linux, then resolves the game and the Dedicated Server
+through Steam's `libraryfolders.vdf`, so installs on a secondary Steam library
+are found as well. `Magnetar` defaults to the `Magnetar` folder next to the
+server install on Windows and to `$XDG_CONFIG_HOME/Magnetar`
+(`~/.config/Magnetar`) on Linux; `PluginSdk.dll` is referenced from its
+`Libraries/<launcher>` subfolder.
 
-| Loader folder  | Windows                                          | Linux                                                 |
-|----------------|--------------------------------------------------|-------------------------------------------------------|
-| `Pulsar`       | `%AppData%\Pulsar`                               | `$XDG_CONFIG_HOME/Pulsar` (`~/.config/Pulsar`)        |
-| `Magnetar`     | the `Magnetar\` tree next to the server install  | `$XDG_CONFIG_HOME/Magnetar` (`~/.config/Magnetar`)    |
-| `MagnetarData` | `<Magnetar>\MagnetarLegacy` or `\MagnetarInterim`, named after the launcher | `$XDG_CONFIG_HOME/Magnetar` (`~/.config/Magnetar`) |
+`Pulsar` and `MagnetarData` are never auto-detected. Leaving them empty turns
+off deployment.
 
 The build fails with a clear message if `Bin64`, `Dedicated64` or Magnetar's
 `PluginSdk.dll` cannot be resolved, and warns instead of failing if a loader
-folder is missing, in which case that plugin is only built, not deployed.
+folder is set but missing, in which case that plugin is only built, not
+deployed.
 
 ### Deployment
 
-Each successful build copies itself into its loader's `Local` plugin folder, so
-there is nothing to run by hand:
+Builds don't deploy anything by default. Load the working copy through
+development folders instead (start Pulsar or Magnetar with `-sources`, then use
+the Sources button), which compile the plugins from source when the loader
+starts. A deployed DLL shows up as a separate local plugin, and once the
+development folder is disabled it can shadow the published version.
 
-| Project        | Build     | Deployed to                                       |
-|----------------|-----------|---------------------------------------------------|
-| `ClientPlugin` | `net48`   | `<Pulsar>/Legacy/Local/DirectTransport/`          |
-| `ClientPlugin` | `net10.0` | `<Pulsar>/Interim/Local/DirectTransport/`         |
-| `ServerPlugin` | `net48`   | `<Magnetar>/MagnetarLegacy/Local/` (Windows only) |
-| `ServerPlugin` | `net10.0` | `<MagnetarData>/Local/`                           |
+To deploy anyway, set `Pulsar` and/or `MagnetarData` in
+`Directory.Build.props.user`, or pass them to a single build:
+
+```
+dotnet build DirectTransport.sln -p:Pulsar=$HOME/.config/Pulsar -p:MagnetarData=$HOME/.config/Magnetar/Magnetar
+```
+
+Each successful build then copies itself into the loader's `Local` plugin
+folder:
+
+| Project        | Build     | Deployed to                                |
+|----------------|-----------|--------------------------------------------|
+| `ClientPlugin` | `net48`   | `<Pulsar>/Legacy/Local/DirectTransport/`   |
+| `ClientPlugin` | `net10.0` | `<Pulsar>/Interim/Local/DirectTransport/`  |
+| `ServerPlugin` | `net10.0` | `<MagnetarData>/Local/`                    |
+
+Both Magnetar launchers share `<MagnetarData>/Local`, so only the `net10.0`
+server build is deployed there; the `net48` server build is not deployed.
 
 Pulsar identifies a plugin by its folder, so the client DLL is copied as
 `plugin.dll`, its symbols as `plugin.pdb` and `DirectTransportClient.xml` from
@@ -190,5 +211,5 @@ platform restrictions declared in the XML.
 falls back to the `Legacy` data folder when `<Pulsar>/Interim` does not exist,
 and so does the deployment. (`<Pulsar>/Modern` belongs to Space Engineers 2 and
 is never a deployment target here.) `MagnetarInterim` is its dedicated server
-counterpart and falls back the same way. On Linux only the Interim launchers
-exist, so only the `net10.0` build is made.
+counterpart. On Linux only the Interim launchers exist, so only the `net10.0`
+build is made.
