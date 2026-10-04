@@ -4,35 +4,47 @@
     <OutputType>Library</OutputType>
     <AssemblyName>DirectTransport</AssemblyName>
     <LangVersion>14</LangVersion>
-    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
 
+    <!-- Target platforms on Windows and Linux -->
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">net48;net10.0</TargetFrameworks>
     <TargetFramework Condition="!$([MSBuild]::IsOSPlatform('Windows'))">net10.0</TargetFramework>
+
+    <!-- Ensure SDK generates assembly attributes (no need for AssemblyInfo) -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+
+    <!-- Default configuration if none supplied -->
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+
+    <!-- Keep original behavior for post/pre build events -->
+    <RunPostBuildEvent>OnBuildSuccess</RunPostBuildEvent>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>x64</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>bin/Debug/</OutputPath>
     <DefineConstants>TRACE;DEV_BUILD</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>x64</PlatformTarget>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin/Release/</OutputPath>
     <DefineConstants>TRACE;DEV_BUILD</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Magnetar PluginSdk: the only configuration mechanism the ServerPlugin uses.
          Provided by the Magnetar host at runtime, so it is not copied (Private=False).
-         The path is resolved from $(MagnetarBinDir) in Directory.Build.props. -->
+         The path is resolved from $(MagnetarBin) in Directory.Build.props. -->
     <Reference Include="PluginSdk">
       <HintPath>$(MagnetarBinDir)PluginSdk.dll</HintPath>
       <Private>False</Private>
@@ -330,31 +342,23 @@
   </Target>
 
   <!-- Copies the build output into Magnetar's Local plugin folder, which lives in
-       Magnetar's config folder:
-         Linux:   $XDG_CONFIG_HOME/Magnetar        (~/.config/Magnetar)
-         Windows: <Magnetar>\MagnetarLegacy        for the net4x build
-                  <Magnetar>\MagnetarInterim       for the net5+ build
+       Magnetar's config folder, but only if MagnetarData is set (see Directory.Build.props).
+       Both launchers share that folder, so the net4x and the net5+ builds of this
+       plugin would overwrite each other there; on Windows the net5+ build wins.
        Magnetar scans Local recursively for assemblies and identifies each plugin by
        its DLL file name, so the plugin is deployed flat, with the MagnetarHub
        registration XML next to it as <AssemblyName>.dll.xml. -->
   <Target Name="DeployPlugin" AfterTargets="Build"
-          Condition="'$(RunPostBuildEvent)' != 'Never' And '$(TargetFramework)' != ''">
-    <!-- On Windows the config folder is named after the launcher and sits next to
-         it. Magnetar falls back to the Legacy folder when the launcher has none of
-         its own, and so does the deployment, unless a .NET Framework build of this
-         same plugin is claiming that folder already. -->
-    <PropertyGroup Condition="'$(MagnetarData)' == '' And '$(Magnetar)' != '' And $([MSBuild]::IsOSPlatform('Windows'))">
-      <MagnetarData Condition="Exists('$(Magnetar)\$(MagnetarLauncher)')">$(Magnetar)\$(MagnetarLauncher)</MagnetarData>
-      <MagnetarData Condition="'$(MagnetarData)' == '' And '$(TargetFrameworks)' == ''">$(Magnetar)\MagnetarLegacy</MagnetarData>
-    </PropertyGroup>
-
+          Condition="'$(RunPostBuildEvent)' != 'Never' And '$(TargetFramework)' != '' And ('$(TargetFrameworks)' == '' Or !$(TargetFramework.StartsWith('net4')))">
     <PropertyGroup>
       <PluginDirectory Condition="'$(MagnetarData)' != '' And Exists('$(MagnetarData)')">$(MagnetarData)$(PathSeparator)Local</PluginDirectory>
       <PluginDataFile>$(RepoRoot)$(AssemblyName)Server.xml</PluginDataFile>
     </PropertyGroup>
 
-    <Warning Condition="'$(PluginDirectory)' == ''"
-             Text="No Magnetar config folder for the $(TargetFramework) build under &quot;$(Magnetar)&quot;, skipping its deployment." />
+    <Message Condition="'$(MagnetarData)' == ''"
+             Text="MagnetarData is not set, the $(TargetFramework) server build will not be deployed." />
+    <Warning Condition="'$(MagnetarData)' != '' And '$(PluginDirectory)' == ''"
+             Text="Magnetar config folder &quot;$(MagnetarData)&quot; does not exist, skipping the deployment of the $(TargetFramework) server build." />
 
     <MakeDir Condition="'$(PluginDirectory)' != ''" Directories="$(PluginDirectory)" />
     <Copy Condition="'$(PluginDirectory)' != ''"

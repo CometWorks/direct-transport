@@ -17,7 +17,7 @@ if sys.platform == "win32":
 
 DRY_RUN = False
 
-TEMPLATE_NAME = 'PluginTemplate'
+TEMPLATE_NAME = "PluginTemplate"
 
 PT_PROJECT_NAME = r"^([A-Z][a-z_0-9]+)+$"
 RX_PROJECT_NAME = re.compile(PT_PROJECT_NAME)
@@ -32,7 +32,7 @@ PROJECT_NAMES = (
 GAME_APP_ID = "244850"  # Space Engineers (Bin64)
 DEDICATED_APP_ID = "298740"  # Space Engineers Dedicated Server (DedicatedServer64)
 
-# Local, git-ignored overrides of the folder paths declared in Directory.Build.props
+# Local folder path overrides imported by Directory.Build.props, not committed
 USER_PROPS = "Directory.Build.props.user"
 
 USER_PROPS_TEMPLATE = """\
@@ -44,13 +44,15 @@ USER_PROPS_TEMPLATE = """\
     <!-- Folder containing SpaceEngineersDedicated.exe (empty = auto-detect from Steam) -->
     <Dedicated64>{dedicated64}</Dedicated64>
 
-    <!-- Pulsar plugin loader folder used for automatic deployment (empty = auto-detect) -->
+    <!-- Pulsar folder to deploy the client plugin into after each build (empty = no deployment),
+         for example $(APPDATA)\\Pulsar on Windows or $(HOME)/.config/Pulsar on Linux -->
     <Pulsar></Pulsar>
 
     <!-- Magnetar installation folder, holds the launchers (empty = auto-detect) -->
     <Magnetar></Magnetar>
 
-    <!-- Magnetar config folder used for automatic deployment (empty = auto-detect) -->
+    <!-- Magnetar config folder to deploy the server plugin into after each build,
+         usually the Magnetar subfolder of the folder above (empty = no deployment) -->
     <MagnetarData></MagnetarData>
   </PropertyGroup>
 </Project>
@@ -123,9 +125,9 @@ def _rename_project(name: str) -> None:
     def iter_paths() -> Iterator[Tuple[str, str]]:
         print("Solution:")
         for filename in (
-            f'{TEMPLATE_NAME}.sln',
-            f'{TEMPLATE_NAME}Client.xml',
-            f'{TEMPLATE_NAME}Server.xml',
+            f"{TEMPLATE_NAME}.sln",
+            f"{TEMPLATE_NAME}Client.xml",
+            f"{TEMPLATE_NAME}Server.xml",
         ):
             if os.path.exists(filename):
                 yield filename, filename
@@ -163,7 +165,7 @@ def _rename_project(name: str) -> None:
 def _get_windows_steam_path() -> str | None:
     reg = winreg.ConnectRegistry(None, winreg.HKEY_LOCAL_MACHINE)
     key = winreg.OpenKey(reg, r"SOFTWARE\WOW6432Node\Valve\Steam")
-    (path, _) = winreg.QueryValueEx(key, "InstallPath")
+    path, _ = winreg.QueryValueEx(key, "InstallPath")
     return path
 
 
@@ -284,15 +286,13 @@ def _get_install_locations(vdf_path: str, ids: list[str]) -> dict[str, str | Non
     return game_install
 
 
-def _set_property(root: ET.Element, name: str, value: str) -> None:
-    """Set a single property in the first PropertyGroup, adding what is missing."""
-    group = root.find("PropertyGroup")
-    if group is None:
-        group = ET.SubElement(root, "PropertyGroup")
-
+def _set_prop(group: ET.Element, name: str, value: str) -> None:
+    """Set an MSBuild property in the group, adding the element if missing."""
     element = group.find(name)
+
     if element is None:
         element = ET.SubElement(group, name)
+        element.tail = "\n    "
 
     element.text = value
 
@@ -309,12 +309,9 @@ def _update_props(
     dedicated64_dir = str(Path(server_dir) / "DedicatedServer64") if server_dir else ""
 
     if not os.path.isfile(USER_PROPS):
-        with open(USER_PROPS, "wt", encoding="utf-8") as f:
-            f.write(
-                USER_PROPS_TEMPLATE.format(
-                    bin64=bin64_dir,
-                    dedicated64=dedicated64_dir,
-                )
+        with open(USER_PROPS, "w", encoding="UTF-8", newline="\n") as file:
+            file.write(
+                USER_PROPS_TEMPLATE.format(bin64=bin64_dir, dedicated64=dedicated64_dir)
             )
         print(f"Created {USER_PROPS}")
         return
@@ -324,11 +321,15 @@ def _update_props(
     tree = ET.parse(USER_PROPS, parser)
     root = tree.getroot()
 
+    group = root.find("PropertyGroup")
+    if group is None:
+        group = ET.SubElement(root, "PropertyGroup")
+
     if bin64_dir:
-        _set_property(root, "Bin64", bin64_dir)
+        _set_prop(group, "Bin64", bin64_dir)
 
     if dedicated64_dir:
-        _set_property(root, "Dedicated64", dedicated64_dir)
+        _set_prop(group, "Dedicated64", dedicated64_dir)
 
     tree.write(USER_PROPS)
     print(f"Updated {USER_PROPS}")
