@@ -19,8 +19,8 @@ namespace Shared.Transport;
 // payloads per channel, and honour the reliable/unreliable delivery hint.
 //
 // Reliability, ordering and fragmentation are provided by LiteNetLib. The
-// same class serves both roles: a server binds and accepts many peers; a
-// client connects to exactly one server. SE frames its own packets (magic
+// same class serves both roles: a server (dedicated server or lobby host)
+// binds and accepts many peers; a client connects to exactly one server. SE frames its own packets (magic
 // byte, CRC, splitting) above this layer, so payloads are passed through
 // untouched apart from a one-byte channel prefix.
 public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
@@ -76,6 +76,27 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
     public event Action<ulong> SessionRequest;
     public event Action<ulong, string> ConnectionFailed;
+
+    // Accept role: a peer was accepted, with the name it announced (null if none). Raised on the
+    // update thread right after SessionRequest. The lobby host makes it a lobby member from here.
+    public event Action<ulong, string> PeerAccepted;
+
+    // Accept role: asked on the poll thread for every connection request; false refuses it. Null
+    // accepts everyone, which is what a dedicated server wants.
+    public Func<bool> AcceptPeers;
+
+    // Control messages (see ControlChannel), raised on the poll thread in arrival order, before
+    // any later packet of the same peer is queued for the engine. Handlers must be thread-safe
+    // and hand engine-facing work to Post.
+    public event Action<ulong, byte[]> ControlReceived;
+
+    // Engine channel byte reserved for DirectTransport's own messages (the lobby). The engine uses
+    // a handful of low channel numbers, so this one never carries game traffic, and a peer that
+    // knows nothing about it just never drains the queue.
+    public const byte ControlChannel = 0xFF;
+
+    // Run an action on the engine's update thread, in order with the transport's own events.
+    public void Post(Action action) => m_engineEvents.Enqueue(action);
 
     // Drain queued SessionRequest / ConnectionFailed events. Must be called
     // on the engine's update thread; see m_engineEvents.
@@ -163,13 +184,30 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         DirectTransport.Log("UDP transport started (client)");
     }
 
-    // Client: connect to the server and block until the link is up (or the
-    // timeout elapses). Returns true on success. The server id is the ulong
-    // the engine will use to address the server.
     // Client: true while the link to the server is up (set on Connected, cleared on the poll
     // thread the moment LiteNetLib reports the disconnect, before the engine event is queued).
     public bool ServerLinkUp => !m_isServer && m_serverId != 0uL && m_peersById.ContainsKey(m_serverId);
 
+    // Dial role: from now on address the single peer as id. A lobby client learns the host's id
+    // only from the lobby snapshot, after the link is up. Call it on the poll thread (from
+    // ControlReceived), so every packet after the snapshot is already tagged with the new id.
+    public void SetServerId(ulong id)
+    {
+        if (m_peersById.TryRemove(m_serverId, out NetPeer peer))
+        {
+            peer.Tag = id;
+            m_peersById[id] = peer;
+        }
+
+        m_serverId = id;
+    }
+
+    public bool SendControl(ulong remoteUser, byte[] data) =>
+        SendPacket(remoteUser, data, data.Length, MyP2PMessageEnum.Reliable, ControlChannel);
+
+    // Client: connect to the server and block until the link is up (or the
+    // timeout elapses). Returns true on success. The server id is the ulong
+    // the engine will use to address the server.
     public bool ConnectToServer(IPEndPoint endpoint, ulong serverId, ulong localId, string localName, int timeoutMs)
     {
         m_serverEndpoint = endpoint;
@@ -199,7 +237,9 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         m_manager.Connect(endpoint.Address.ToString(), endpoint.Port, writer);
 
         DirectTransport.Log($"Connecting to server {endpoint} as {localId}");
-        return m_clientConnected.Wait(timeoutMs);
+        // Also signalled when the attempt ends without a link (refused or out of attempts), so a
+        // refusal does not sit out the whole timeout.
+        return m_clientConnected.Wait(timeoutMs) && ServerLinkUp;
     }
 
     private void StartPolling()
@@ -368,7 +408,16 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
                 return;
             }
 
+            if (AcceptPeers != null && !AcceptPeers())
+            {
+                DirectTransport.Log($"Refused peer {request.RemoteEndPoint}: not accepting connections");
+                request.Reject();
+                return;
+            }
+
             ulong clientId = request.Data.GetULong();
+            // Optional trailing field, see ConnectToServer.
+            string clientName = request.Data.AvailableBytes > 0 ? request.Data.GetString() : null;
             NetPeer peer = request.Accept();
             peer.Tag = clientId;
             m_peersById[clientId] = peer;
@@ -381,6 +430,7 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
             // RunCallbacks on the update thread, after packets may already
             // be arriving on the network thread).
             m_engineEvents.Enqueue(() => SessionRequest?.Invoke(clientId));
+            m_engineEvents.Enqueue(() => PeerAccepted?.Invoke(clientId, clientName));
         }
         catch (Exception e)
         {
@@ -408,6 +458,8 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
             m_peersById.TryRemove(id, out _);
 
         DirectTransport.Log($"Peer {id} disconnected: {disconnectInfo.Reason}");
+        if (!m_isServer)
+            m_clientConnected.Set();
         if (id != 0uL)
         {
             // Deliver on the engine's update thread. On the client the
@@ -425,6 +477,19 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
 
         int seChannel = reader.GetByte();
         byte[] payload = reader.GetRemainingBytes();
+
+        if (seChannel == ControlChannel)
+        {
+            try
+            {
+                ControlReceived?.Invoke(sender, payload);
+            }
+            catch (Exception e)
+            {
+                DirectTransport.LogError("Control message handler failed: " + e);
+            }
+            return;
+        }
 
         var queue = m_receiveQueues.GetOrAdd(seChannel, _ => new ConcurrentQueue<Incoming>());
         queue.Enqueue(new Incoming(sender, payload));

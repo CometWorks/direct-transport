@@ -16,7 +16,9 @@ public static class DirectTransport
     // id is sufficient and sidesteps the bind-address vs connect-address
     // mismatch that a derived id would suffer (server binds 0.0.0.0, client
     // dials a concrete IP). Chosen outside the individual-account SteamID
-    // range and away from the reserved 0 / ulong.MaxValue sentinels.
+    // range and away from the reserved 0 / ulong.MaxValue sentinels. A lobby
+    // host has a real user id instead; a lobby client dials with this one and
+    // switches to the host's id once the lobby snapshot names it.
     public const ulong ServerId = 0xFF00000000000001UL;
 
     // LiteNetLib connection key: any peer not presenting it is rejected, so a
@@ -42,7 +44,8 @@ public static class DirectTransport
     public static UdpPeer2Peer Peer { get; private set; }
 
     // Server: bind the UDP socket and register the networking service so the
-    // dedicated server object (created later) transports over UDP. Call
+    // dedicated server object (created later) transports over UDP. The lobby
+    // host of the client plugin uses it the same way. Call
     // before MyMultiplayer.Static is constructed.
     public static void InitServer(IPEndPoint bind)
     {

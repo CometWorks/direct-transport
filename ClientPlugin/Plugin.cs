@@ -14,8 +14,8 @@ using VRage.Plugins;
 #if !DEV_BUILD
 using System.Reflection;
 
-[assembly: AssemblyVersion("1.0.3.0")]
-[assembly: AssemblyFileVersion("1.0.3.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 #endif
 
 namespace ClientPlugin;
@@ -53,11 +53,13 @@ public class Plugin : IPlugin, ICommonPlugin
         var gameVersion = MyFinalBuildConstants.APP_VERSION_STRING.ToString();
         Common.SetPlugin(this, gameVersion, MyFileSystem.UserDataPath);
 
-        // Bring up the direct UDP transport (when --connect is given) before
-        // applying patches, so each [HarmonyPatch] Prepare() gate sees the
-        // correct DirectClient.Enabled state. The identity options are handled
-        // far earlier, from the preloader (see ClientIdentity).
+        // Bring up the direct UDP transport (when --connect, --host-lobby or
+        // --join-lobby is given) before applying patches, so each
+        // [HarmonyPatch] Prepare() gate sees the correct DirectClient and
+        // LobbyMode state. The identity options are handled far earlier, from
+        // the preloader (see ClientIdentity).
         DirectClient.Init(Log);
+        Lobby.LobbyMode.Init(Log);
 
         if (!PatchHelpers.HarmonyPatchAll(Log, new Harmony(Name)))
         {
