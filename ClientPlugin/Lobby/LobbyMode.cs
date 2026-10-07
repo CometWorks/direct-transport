@@ -1,5 +1,4 @@
 using System.Net;
-using Sandbox.Engine.Networking;
 using Sandbox.Game.Gui;
 using Shared.Logging;
 using Shared.Transport;

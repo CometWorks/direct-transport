@@ -19,8 +19,8 @@ namespace Shared.Transport;
 // payloads per channel, and honour the reliable/unreliable delivery hint.
 //
 // Reliability, ordering and fragmentation are provided by LiteNetLib. The
-// same class serves both roles: a server binds and accepts many peers; a
-// client connects to exactly one server. SE frames its own packets (magic
+// same class serves both roles: a server (dedicated server or lobby host)
+// binds and accepts many peers; a client connects to exactly one server. SE frames its own packets (magic
 // byte, CRC, splitting) above this layer, so payloads are passed through
 // untouched apart from a one-byte channel prefix.
 public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
@@ -184,9 +184,6 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         DirectTransport.Log("UDP transport started (client)");
     }
 
-    // Client: connect to the server and block until the link is up (or the
-    // timeout elapses). Returns true on success. The server id is the ulong
-    // the engine will use to address the server.
     // Client: true while the link to the server is up (set on Connected, cleared on the poll
     // thread the moment LiteNetLib reports the disconnect, before the engine event is queued).
     public bool ServerLinkUp => !m_isServer && m_serverId != 0uL && m_peersById.ContainsKey(m_serverId);
@@ -208,6 +205,9 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
     public bool SendControl(ulong remoteUser, byte[] data) =>
         SendPacket(remoteUser, data, data.Length, MyP2PMessageEnum.Reliable, ControlChannel);
 
+    // Client: connect to the server and block until the link is up (or the
+    // timeout elapses). Returns true on success. The server id is the ulong
+    // the engine will use to address the server.
     public bool ConnectToServer(IPEndPoint endpoint, ulong serverId, ulong localId, string localName, int timeoutMs)
     {
         m_serverEndpoint = endpoint;

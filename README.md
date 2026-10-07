@@ -32,7 +32,8 @@ replaces that seam:
   auth ticket; the server admits every client (`UdpGameServer.BeginAuthSession`).
 
 Only the transport and auth are replaced — the join handshake, world download
-and replication are the stock engine paths.
+and replication are the stock engine paths. Lobby games replace the Steam lobby
+service on top of that, see [Lobby games](#lobby-games).
 
 ## Usage
 
@@ -143,8 +144,8 @@ loaded.
 
 ## Limitations
 
-- .NET (Core) runtime (`CoreCLR`), dedicated-server target — matching the
-  headless test use case. Developed and tested on Linux; nothing in the plugins
+- .NET (Core) runtime (`CoreCLR`), dedicated server and lobby games built for
+  the headless test use case. Developed and tested on Linux; nothing in the plugins
   is platform-specific and neither manifest restricts the platform.
 - No encryption or authentication: intended for trusted, isolated test networks.
 - One server per client process (a client joins a single server at a time).
