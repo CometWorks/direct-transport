@@ -8,8 +8,8 @@ namespace ClientPlugin;
 // and --client-name (what it is called).
 //
 // --client-id gives the client a fake Steam identity, applied whether or not
-// the game talks to Steam. Without Steam - because it is absent, not running,
-// or disabled by the remote plugin's --no-steam - MySteamService falls back to
+// the game talks to Steam. Without Steam - because it is absent, not running
+// or disabled - MySteamService falls back to
 // the shared placeholder OFFLINE_STEAM_ID (1234567891011), so every concurrent
 // client would claim the same identity and the same user data folder. With
 // Steam running, the option deliberately displaces the real Steam id, so a

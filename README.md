@@ -65,9 +65,8 @@ brings up the UDP transport and auto-joins once the main menu is reached. Give
 each concurrent client a distinct `--client-id`; they become distinct in-game
 identities with their own user data folders, and the option lifts the game's
 one-instance-per-machine guard so they can run side by side. Add
-`--client-name <name>` for a readable name in chat and the player list. Combine
-with the Remote plugin's `--no-steam` (Steam out of the picture entirely) and
-`--headless` for players-free load testing.
+`--client-name <name>` for a readable name in chat and the player list. Add
+Pulsar's `--lazy-steam` to start the game when Steam is not running.
 
 If the link dies under the client — the server restarts, a gateway drops the
 session, the connection times out — the plugin rejoins on its own: it waits for
@@ -90,13 +89,16 @@ mode other than offline as a friends game. Other clients started with
 none needs Steam.
 
 ```
-Interim --no-steam --client-id 1001 --host-lobby 27020
-Interim --no-steam --client-id 1002 --join-lobby 127.0.0.1:27020
+Interim --lazy-steam --client-id 1001 --host-lobby 27020
+Interim --lazy-steam --client-id 1002 --join-lobby 127.0.0.1:27020
 ```
 
-The host has to load the world online: through the Remote plugin with
-`POST /v1/game/load` or `/v1/game/reload` and `"onlineMode": "FRIENDS"`, or by
-setting the online mode in the world's settings before loading it. The joiner
+The host has to load the world online: a world saved with
+`<OnlineMode>FRIENDS</OnlineMode>` in its `Sandbox.sbc` and `Sandbox_config.sbc`,
+or one a plugin loads with
+`MySessionLoader.LoadSingleplayerSession(path, onlineMode: MyOnlineModeEnum.FRIENDS, maxPlayers: 4)`.
+Without Steam the game's world settings screen refuses to save an online mode,
+so it cannot be set from there. The joiner
 tries once, when its main menu is reached. If no lobby is up by then, the join
 fails with "lobby does not exist" and is not retried.
 
