@@ -244,7 +244,7 @@ public static class DirectClient
         return ok;
     }
 
-    private static bool TryParseEndpoint(string address, out IPEndPoint endpoint)
+    public static bool TryParseEndpoint(string address, out IPEndPoint endpoint)
     {
         endpoint = null;
 
