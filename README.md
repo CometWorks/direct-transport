@@ -5,7 +5,7 @@ game **clients** join a **dedicated server** with no Steam client on either
 side, so you can stand up multi-client test setups — functional and load
 testing — with no human players and no Steam accounts. A client can also
 **host its world** as a friends (lobby) game that other clients join, the same
-way, see [Lobby games](#lobby-games).
+way, for testing only, see [Lobby games](#lobby-games).
 
 It is delivered as two plugins that share one transport implementation:
 
@@ -79,6 +79,10 @@ time since the last packet, ping) to the console every 10 seconds, which is how
 one-way silence is told apart from a dead socket.
 
 ## Lobby games
+
+**This feature is available strictly for testing purposes. The main purpose is
+to allow for multiplayer testing using only clients, which is subpar to proper
+Magnetar (DS) based hosting.**
 
 A client started with `--host-lobby` hosts any world it loads with an online
 mode other than offline as a friends game. Other clients started with
