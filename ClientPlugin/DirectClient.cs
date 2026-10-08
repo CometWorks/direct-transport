@@ -244,6 +244,21 @@ public static class DirectClient
         return ok;
     }
 
+    // T-0405: the process is about to end (ExitGoodbyePatch, ahead of Pulsar's kill). Close the link with a Disconnect
+    // so the server ends this player's session now instead of at its timeout; the link drop that follows is ours and
+    // must not arm a rejoin.
+    public static void Goodbye(string why)
+    {
+        if (!Enabled || DirectTransport.Peer == null)
+            return;
+
+        m_sessionEndedLocally = true;
+        m_rejoinArmed = false;
+        long started = Environment.TickCount64;
+        int told = DirectTransport.Peer.Goodbye();
+        m_log?.Info($"Goodbye ({why}): sent Disconnect to {told} peer(s) in {Environment.TickCount64 - started} ms");
+    }
+
     public static bool TryParseEndpoint(string address, out IPEndPoint endpoint)
     {
         endpoint = null;

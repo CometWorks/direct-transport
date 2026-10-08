@@ -286,6 +286,42 @@ public sealed class UdpPeer2Peer : IMyPeer2Peer, INetEventListener
         }
     }
 
+    // T-0405: tell every peer this side is going, before the process dies. Pulsar replaces the game's exit with
+    // Process.Kill() (Legacy Patch_ExitThreadSafe), so without this a quitting client never sends a Disconnect and the
+    // server (the cluster gateway) keeps its session - and the player's body in the world - until the 30 s LiteNetLib
+    // timeout plus the gateway's own 2-min Timeout. DisconnectPeer sends the Disconnect packet synchronously
+    // (NetPeer.Shutdown -> SendRaw); the short wait lets the peer's ShutdownOk arrive, or the packet go out once more
+    // on a lossy link, before the kill. Any thread; returns the number of peers told.
+    public int Goodbye(int waitMs = 250)
+    {
+        int told = 0;
+        foreach (NetPeer peer in m_peersById.Values)
+        {
+            try
+            {
+                m_manager.DisconnectPeer(peer);
+                told++;
+            }
+            catch { }
+        }
+
+        long until = Environment.TickCount64 + waitMs;
+        while (told > 0 && Environment.TickCount64 < until)
+        {
+            bool open = false;
+            foreach (NetPeer peer in m_peersById.Values)
+            {
+                if (peer.ConnectionState != ConnectionState.Disconnected)
+                    open = true;
+            }
+            if (!open)
+                break;
+            Thread.Sleep(5);
+        }
+
+        return told;
+    }
+
     public void Stop()
     {
         m_running = false;
