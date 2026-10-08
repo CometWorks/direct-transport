@@ -84,6 +84,9 @@ public static class DirectClient
         // and leaves the session teardown to the engine.
         DirectTransport.Peer.ConnectionFailed += OnConnectionFailed;
         MySession.OnUnloading += OnSessionUnloading;
+        // T-0405: a SIGTERM (or SIGINT outside the console handler) never reaches ExitThreadSafe; .NET raises
+        // ProcessExit for it instead. Pulsar's own exit is a SIGKILL and raises nothing - ExitGoodbyePatch covers it.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Goodbye("process exit");
 
         log.Info($"Direct transport client active, will connect to {endpoint}");
     }
