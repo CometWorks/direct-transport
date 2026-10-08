@@ -84,9 +84,6 @@ public static class DirectClient
         // and leaves the session teardown to the engine.
         DirectTransport.Peer.ConnectionFailed += OnConnectionFailed;
         MySession.OnUnloading += OnSessionUnloading;
-        // T-0405: a SIGTERM (or SIGINT outside the console handler) never reaches ExitThreadSafe; .NET raises
-        // ProcessExit for it instead. Pulsar's own exit is a SIGKILL and raises nothing - ExitGoodbyePatch covers it.
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => Goodbye("process exit");
 
         log.Info($"Direct transport client active, will connect to {endpoint}");
     }
@@ -260,6 +257,9 @@ public static class DirectClient
         long started = Environment.TickCount64;
         int told = DirectTransport.Peer.Goodbye();
         m_log?.Info($"Goodbye ({why}): sent Disconnect to {told} peer(s) in {Environment.TickCount64 - started} ms");
+        // The kill follows within milliseconds and the game log is buffered: without a flush this line (and the
+        // last seconds before it) never reach the file (bench 2026-10-08 17:25, green-exit3).
+        VRage.Utils.MyLog.Default?.Flush();
     }
 
     public static bool TryParseEndpoint(string address, out IPEndPoint endpoint)
