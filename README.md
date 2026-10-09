@@ -77,6 +77,13 @@ meanwhile. The transport also writes a per-peer liveness line (connection state,
 time since the last packet, ping) to the console every 10 seconds, which is how
 one-way silence is told apart from a dead socket.
 
+Quitting the game closes the session at once. Pulsar ends every game exit with
+`Process.Kill()`, so the client sends its Disconnect from a prefix on
+`MySandboxGame.ExitThreadSafe` that runs ahead of Pulsar's. That covers the
+menu's Exit, closing the window (Alt-F4), Ctrl-C in the console, and the Remote
+plugin's `exit_game`. The server sees the link close within a fraction of a
+second, and it releases the player's slot and character.
+
 ## Lobby games
 
 **This feature is available strictly for testing purposes. The main purpose is
@@ -155,6 +162,11 @@ loaded.
   is platform-specific and neither manifest restricts the platform.
 - No encryption or authentication: intended for trusted, isolated test networks.
 - One server per client process (a client joins a single server at a time).
+- **SIGTERM or kill = 2-min ghost.** A client ended by a signal (`kill`, `kill -9`,
+  a TERM from a supervisor) never reaches the game's exit, so it sends no
+  Disconnect: the server keeps the session and the player's body until the
+  transport times out (about 2 minutes behind a cluster gateway). Quit through the
+  game, for example the Remote plugin's `exit_game`, before killing the process.
 - Lobby games: no lobby list and no invites, a joiner names its host on the
   command line. Worlds with Workshop mods cannot be hosted without Steam.
 
