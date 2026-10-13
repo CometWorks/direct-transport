@@ -249,12 +249,8 @@ folder:
 
 | Project        | Build     | Deployed to                                |
 |----------------|-----------|--------------------------------------------|
-| `ClientPlugin` | `net48`   | `<Pulsar>/Legacy/Local/DirectTransport/`   |
 | `ClientPlugin` | `net10.0` | `<Pulsar>/Interim/Local/DirectTransport/`  |
 | `ServerPlugin` | `net10.0` | `<MagnetarData>/Local/`                    |
-
-Both Magnetar launchers share `<MagnetarData>/Local`, so only the `net10.0`
-server build is deployed there; the `net48` server build is not deployed.
 
 Pulsar identifies a plugin by its folder, so the client DLL is copied as
 `plugin.dll`, its symbols as `plugin.pdb` and `DirectTransportClient.xml` from
@@ -268,5 +264,5 @@ platform restrictions declared in the XML.
 falls back to the `Legacy` data folder when `<Pulsar>/Interim` does not exist,
 and so does the deployment. (`<Pulsar>/Modern` belongs to Space Engineers 2 and
 is never a deployment target here.) `MagnetarInterim` is its dedicated server
-counterpart. On Linux only the Interim launchers exist, so only the `net10.0`
-build is made.
+counterpart. Both plugin XMLs allow only CoreCLR, so the Legacy launchers never
+load DirectTransport and there is only a `net10.0` build.

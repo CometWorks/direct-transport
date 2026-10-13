@@ -89,25 +89,15 @@
     <Magnetar Condition="'$(Magnetar)' == '' and '$(Dedicated64)' != ''">$([System.IO.Path]::GetFullPath('$(Dedicated64)\..\Magnetar'))</Magnetar>
   </PropertyGroup>
 
-  <!-- Magnetar launcher the current build targets. It names the Libraries
-       subfolder holding PluginSdk.dll. $(TargetFrameworkIdentifier) is only
-       derived after this file is imported, but the raw $(TargetFramework) is
-       available: in a multi-targeting inner build MSBuild passes it as a global
-       property. -->
-  <PropertyGroup Condition="'$(TargetFramework)' != ''">
-    <MagnetarLauncher Condition="$(TargetFramework.StartsWith('net4'))">MagnetarLegacy</MagnetarLauncher>
+  <!-- Magnetar launcher the server plugin builds against. It names the Libraries
+       subfolder holding PluginSdk.dll. -->
+  <PropertyGroup>
     <MagnetarLauncher Condition="'$(MagnetarLauncher)' == ''">MagnetarInterim</MagnetarLauncher>
-  </PropertyGroup>
-
-  <!-- A single-target project sets its TargetFramework only after this file is
-       imported; Linux builds are always single-target and always MagnetarInterim. -->
-  <PropertyGroup Condition="'$(MagnetarLauncher)' == '' and !$([MSBuild]::IsOSPlatform('Windows'))">
-    <MagnetarLauncher>MagnetarInterim</MagnetarLauncher>
   </PropertyGroup>
 
   <!-- Folder holding PluginSdk.dll, referenced by the ServerPlugin project: each
        launcher has its own Libraries subfolder, Linux ships only MagnetarInterim. -->
-  <PropertyGroup Condition="'$(MagnetarBin)' == '' and '$(Magnetar)' != '' and '$(MagnetarLauncher)' != ''">
+  <PropertyGroup Condition="'$(MagnetarBin)' == '' and '$(Magnetar)' != ''">
     <MagnetarBin>$(Magnetar)$(PathSeparator)Libraries$(PathSeparator)$(MagnetarLauncher)</MagnetarBin>
   </PropertyGroup>
 

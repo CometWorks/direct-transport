@@ -5,9 +5,8 @@
     <AssemblyName>DirectTransport</AssemblyName>
     <LangVersion>14</LangVersion>
 
-    <!-- Target platforms on Windows and Linux -->
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">net48;net10.0</TargetFrameworks>
-    <TargetFramework Condition="!$([MSBuild]::IsOSPlatform('Windows'))">net10.0</TargetFramework>
+    <!-- The plugin XMLs allow only CoreCLR, so there is no .NET Framework build -->
+    <TargetFramework>net10.0</TargetFramework>
 
     <!-- Ensure SDK generates assembly attributes (no need for AssemblyInfo) -->
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
@@ -284,21 +283,17 @@
              Text="Pulsar folder &quot;$(Pulsar)&quot; does not exist, the client plugin will not be deployed." />
   </Target>
 
-  <!-- Copies the build output into Pulsar's Local plugin folder, but only if the Pulsar
-       property is set (see Directory.Build.props):
-         net4x (.NET Framework) -> Pulsar/Legacy/Local/$(AssemblyName)
-         net5+ (.NET)           -> Pulsar/Interim/Local/$(AssemblyName)
-       Each build lands in its own subfolder as plugin.dll next to the plugin.xml
+  <!-- Copies the build output into Pulsar/Interim/Local/$(AssemblyName), but only if
+       the Pulsar property is set (see Directory.Build.props).
+       The build lands in its own subfolder as plugin.dll next to the plugin.xml
        metadata, so Pulsar picks up the friendly name and the runtime restrictions.
        (Pulsar/Modern belongs to Space Engineers 2 and is never a target here.) -->
   <Target Name="DeployPlugin" AfterTargets="Build"
           Condition="'$(RunPostBuildEvent)' != 'Never' And '$(TargetFramework)' != '' And Exists('$(Pulsar)')">
     <PropertyGroup>
-      <PulsarEdition Condition="$(TargetFramework.StartsWith('net4'))">Legacy</PulsarEdition>
-      <PulsarEdition Condition="'$(PulsarEdition)' == '' And Exists('$(Pulsar)$(PathSeparator)Interim')">Interim</PulsarEdition>
-      <!-- Without its own data folder the Interim launcher falls back to the Legacy one.
-           Deploy there only if no .NET Framework build is claiming the same folder. -->
-      <PulsarEdition Condition="'$(PulsarEdition)' == '' And '$(TargetFrameworks)' == ''">Legacy</PulsarEdition>
+      <PulsarEdition Condition="Exists('$(Pulsar)$(PathSeparator)Interim')">Interim</PulsarEdition>
+      <!-- Without its own data folder the Interim launcher falls back to the Legacy one -->
+      <PulsarEdition Condition="'$(PulsarEdition)' == ''">Legacy</PulsarEdition>
 
       <PulsarEditionDir Condition="'$(PulsarEdition)' != ''">$(Pulsar)$(PathSeparator)$(PulsarEdition)</PulsarEditionDir>
       <PulsarEdition Condition="'$(PulsarEditionDir)' != '' And !Exists('$(PulsarEditionDir)')"></PulsarEdition>
