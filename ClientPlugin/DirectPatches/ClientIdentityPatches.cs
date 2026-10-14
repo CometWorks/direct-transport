@@ -19,10 +19,14 @@ public static class SteamUserIdPatch
     // ReSharper disable once UnusedMember.Global
     public static bool Prepare() => ClientIdentity.ClientId.HasValue;
 
+    // The assembly has to be named: this runs from Preloader.Finish, where
+    // VRage.Steam is loaded only if a preloader patched it (linux-compat does,
+    // nothing does on Windows). Naming it loads it through Pulsar's game
+    // resolver, or returns the patched copy already loaded.
     // ReSharper disable once UnusedMember.Global
     public static MethodBase TargetMethod() =>
         AccessTools.Constructor(
-            AccessTools.TypeByName("VRage.Steam.MySteamService"),
+            AccessTools.TypeByName("VRage.Steam.MySteamService, VRage.Steam"),
             [typeof(bool), typeof(uint)]
         );
 
