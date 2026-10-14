@@ -5,9 +5,8 @@
     <AssemblyName>DirectTransport</AssemblyName>
     <LangVersion>14</LangVersion>
 
-    <!-- Target platforms on Windows and Linux -->
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">net48;net10.0</TargetFrameworks>
-    <TargetFramework Condition="!$([MSBuild]::IsOSPlatform('Windows'))">net10.0</TargetFramework>
+    <!-- The plugin XMLs allow only CoreCLR, so there is no .NET Framework build -->
+    <TargetFramework>net10.0</TargetFramework>
 
     <!-- Ensure SDK generates assembly attributes (no need for AssemblyInfo) -->
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
@@ -343,13 +342,11 @@
 
   <!-- Copies the build output into Magnetar's Local plugin folder, which lives in
        Magnetar's config folder, but only if MagnetarData is set (see Directory.Build.props).
-       Both launchers share that folder, so the net4x and the net5+ builds of this
-       plugin would overwrite each other there; on Windows the net5+ build wins.
        Magnetar scans Local recursively for assemblies and identifies each plugin by
        its DLL file name, so the plugin is deployed flat, with the MagnetarHub
        registration XML next to it as <AssemblyName>.dll.xml. -->
   <Target Name="DeployPlugin" AfterTargets="Build"
-          Condition="'$(RunPostBuildEvent)' != 'Never' And '$(TargetFramework)' != '' And ('$(TargetFrameworks)' == '' Or !$(TargetFramework.StartsWith('net4')))">
+          Condition="'$(RunPostBuildEvent)' != 'Never' And '$(TargetFramework)' != ''">
     <PropertyGroup>
       <PluginDirectory Condition="'$(MagnetarData)' != '' And Exists('$(MagnetarData)')">$(MagnetarData)$(PathSeparator)Local</PluginDirectory>
       <PluginDataFile>$(RepoRoot)$(AssemblyName)Server.xml</PluginDataFile>
